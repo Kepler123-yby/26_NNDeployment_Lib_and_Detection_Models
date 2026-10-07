@@ -41,7 +41,7 @@ RuneModel rune_model(
 
 ## 配置文件构造
 
-JSON 构造使用公开的 `JsonConfig`，三个字段依次为 JSON 文件路径、配置节点名和模型文件夹路径。内部将模型文件夹与 JSON 节点中的 `xml` 文件名拼接为完整模型路径：
+JSON 构造使用公开的 `JsonConfig`，三个字段依次为 JSON 文件路径、配置节点名和模型仓库根目录。节点里的 `xml` 字段带后端子目录（如 `openvino/xxx.xml`、`onnx/xxx.onnx`、`tensorrt/xxx.engine`），内部将其与 `model_folder` 拼接为完整路径。为兼容旧写法（`model_folder` 传某个后端子目录、`xml` 只写文件名），当直接拼接不存在时会依次回退到“模型文件夹的父目录”以及“在其父目录下按文件名递归查找”：
 
 ```cpp
 ArmorModel armor_model(JsonConfig{

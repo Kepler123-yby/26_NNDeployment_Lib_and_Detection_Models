@@ -1,27 +1,27 @@
 {
   "armor_v8":
   {
-    "xml": "Infantry-v8n-fp16-20260726-D1.8w-B16/Infantry-v8n-fp16-20260726-D1.8w-B16.xml",
+    "xml": "onnx/Infantry-v8n-fp16-20260726-D1.8w-B16.onnx",
     "infer_mode": "async",
-    "deploy_way": "openvino",
+    "deploy_way": "tensorrt",
     "postprocess_mode": "auto",
     "device": "GPU",
     "score_threshold": 0.5
   },
   "armor_v5":
   {
-    "xml": "Infantry-v5n-fp16-20250725/Infantry-v5n-Release-20260725.xml",
+    "xml": "onnx/Infantry-v8n-fp16-20260726-D1.8w-B16.onnx",
     "infer_mode": "async",
-    "deploy_way": "openvino",
+    "deploy_way": "tensorrt",
     "postprocess_mode": "auto",
     "device": "GPU",
     "score_threshold": 0.5
   },
   "rune_detect":
   {
-    "xml": "Rune-v8n-fp16-20260624-D14367-B16/Rune-v8n-fp16-20260624-D14367-B16.xml",
+    "xml": "onnx/Rune-v8n-fp16-20260624.onnx",
     "infer_mode": "sync",
-    "deploy_way": "openvino",
+    "deploy_way": "tensorrt",
     "postprocess_mode": "auto",
     "device": "GPU",
     "score_threshold": 0.5

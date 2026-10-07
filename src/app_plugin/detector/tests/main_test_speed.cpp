@@ -41,7 +41,7 @@ struct TestCase
 void runTest(const fs::path &root, const TestCase &test)
 {
     const fs::path config_path = root / "src/app_plugin/detector/config/detect.json";
-    const fs::path model_folder = root / "所有模型/openvino";
+    const fs::path model_folder = root / "所有模型";
     cv::VideoCapture video((root / test.video_path).string());
     cv::Mat frame;
     if (!video.isOpened() || !video.read(frame) || frame.empty())

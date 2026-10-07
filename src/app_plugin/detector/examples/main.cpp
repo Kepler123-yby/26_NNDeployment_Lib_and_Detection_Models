@@ -172,7 +172,7 @@ VideoResult runArmor(const fs::path &root,
                      const std::string &output_name,
                      std::size_t pipeline_delay)
 {
-    const fs::path models = root / "所有模型/openvino";
+    const fs::path models = root / "所有模型";
     ArmorDetector detector(
         JsonConfig{config_path.string(), config_key, models.string()},
         pipeline_delay);
@@ -200,7 +200,7 @@ VideoResult runRune(const fs::path &root, const fs::path &config_path,
                     const fs::path &output_dir,
                     std::size_t pipeline_delay)
 {
-    const fs::path models = root / "所有模型/openvino";
+    const fs::path models = root / "所有模型";
     RuneDetector detector(
         JsonConfig{config_path.string(), "rune_detect", models.string()},
         pipeline_delay);

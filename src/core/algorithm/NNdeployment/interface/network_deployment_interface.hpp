@@ -13,6 +13,8 @@ class JsonConfig
 {
 public:
     // json路径、json内部key、模型文件夹路径。
+    // model_folder 推荐传模型仓库根（如 "所有模型"），节点 xml 里带后端子目录
+    // （openvino/、onnx/、tensorrt/）；也兼容传某个后端子目录的旧写法。
     JsonConfig(std::string json_path,
                std::string model_key,
                std::string model_folder);

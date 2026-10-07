@@ -38,7 +38,7 @@ JsonConfig config(const fs::path &root, const std::string &key)
     return JsonConfig{
         (root / "src/app_plugin/detector/tests/detector_smoke.json").string(),
         key,
-        (root / "所有模型/openvino").string()};
+        (root / "所有模型").string()};
 }
 
 void testArmor(const fs::path &root, const std::string &key,

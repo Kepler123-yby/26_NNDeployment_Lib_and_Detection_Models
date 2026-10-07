@@ -26,6 +26,15 @@ if(NNDEPLOYMENT_ENABLE_TENSORRT)
               /usr/local/TensorRT-10.0.1.6/lib/
         REQUIRED
     )
+    # ONNX Parser 库（nvonnxparser），用于直接加载 .onnx 构建 engine
+    get_filename_component(TENSORRT_LIB_DIR "${TENSORRT_LIBRARY}" DIRECTORY)
+    find_library(TENSORRT_ONNXPARSER_LIBRARY nvonnxparser
+        PATHS "${TENSORRT_LIB_DIR}"
+              /usr/lib/x86_64-linux-gnu
+              /usr/src/tensorrt/lib
+              /usr/local/TensorRT-10.0.1.6/lib/
+        REQUIRED
+    )
 else()
     find_package(OpenVINO REQUIRED)
 endif()
@@ -91,6 +100,7 @@ if(NNDEPLOYMENT_WITH_TENSORRT)
     )
     target_link_libraries(${lib_name}_lib PRIVATE
         ${TENSORRT_LIBRARY}
+        ${TENSORRT_ONNXPARSER_LIBRARY}
         CUDA::cudart
     )
     target_compile_definitions(${lib_name}_lib PRIVATE NNDEPLOYMENT_WITH_TENSORRT=1)

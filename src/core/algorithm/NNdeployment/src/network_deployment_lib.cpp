@@ -30,6 +30,8 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <system_error>
+#include <vector>
 
 // 总模块：YOLOModel 构造、部署/后处理选择以及完整推理入口。
 
@@ -188,6 +190,53 @@ void printCurrentModelInfo(const ModelConfig &model_config)
     std::cout << std::endl;
 }
 
+// 解析模型文件路径。
+// 模型仓库根目录（"所有模型"）下按后端分目录（openvino/、onnx/、tensorrt/），
+// model_folder 推荐直接传仓库根（"所有模型"），xml 里带上后端子目录（如 "onnx/xxx.onnx"）；
+// 同时兼容旧写法（model_folder 传某个后端子目录，xml 只写文件名）。
+// 为避免把查找根目录写死，依次尝试：
+//   1) model_folder / name；
+//   2) model_folder 的父目录（模型仓库根）/ name，如 name="onnx/xxx.onnx"；
+//   3) 在模型仓库根目录下按文件名递归查找，如 name="xxx.onnx"。
+std::string resolveModelPath(const std::string &model_folder, const std::string &name)
+{
+    const std::filesystem::path folder(model_folder);
+    const std::filesystem::path name_path(name);
+    const std::vector<std::filesystem::path> candidates = {
+        folder / name_path, folder.parent_path() / name_path};
+
+    for (const std::filesystem::path &candidate : candidates)
+    {
+        std::error_code ec;
+        if (std::filesystem::is_regular_file(candidate, ec))
+            return std::filesystem::weakly_canonical(candidate, ec).string();
+    }
+
+    // 在模型仓库根目录（model_folder 的父目录）下按文件名递归查找。
+    const std::filesystem::path repository_root = folder.parent_path();
+    std::error_code ec;
+    if (!repository_root.empty() &&
+        std::filesystem::is_directory(repository_root, ec))
+    {
+        for (std::filesystem::recursive_directory_iterator it(
+                 repository_root,
+                 std::filesystem::directory_options::skip_permission_denied, ec),
+             end;
+             it != end; it.increment(ec))
+        {
+            if (ec)
+                break;
+            std::error_code file_ec;
+            if (it->is_regular_file(file_ec) &&
+                it->path().filename() == name_path.filename())
+                return std::filesystem::weakly_canonical(it->path(), file_ec).string();
+        }
+    }
+
+    // 未找到时返回默认拼接结果，交由具体后端给出明确的加载错误。
+    return (folder / name_path).lexically_normal().string();
+}
+
 // 从 JSON 的指定节点读取内部模型配置。
 ModelConfig loadModelConfigFromJson(const JsonConfig &json_config)
 {
@@ -207,7 +256,7 @@ ModelConfig loadModelConfigFromJson(const JsonConfig &json_config)
         throw std::runtime_error("模型配置缺少xml文件名: " + json_config.model_key);
 
     const std::string model_path =
-        (std::filesystem::path(json_config.model_folder) / xml_name).lexically_normal().string();
+        resolveModelPath(json_config.model_folder, xml_name);
 
     const NetInferMode infer_mode = parseInferMode(static_cast<std::string>(node["infer_mode"]));
     const NetDeployWay deploy_way = parseDeployWay(static_cast<std::string>(node["deploy_way"]));

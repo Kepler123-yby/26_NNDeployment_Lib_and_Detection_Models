@@ -46,7 +46,7 @@
 - 仅有 CPU 的设备可把对应 JSON 节点的 `device` 改为 `CPU`。
 - TensorRT 后端要求 NVIDIA GPU、兼容驱动、CUDA Toolkit 与 TensorRT。
 - 运行随仓示例不需要工业相机、串口、下位机或云台。
-- TensorRT 序列化引擎通常与 GPU 架构、CUDA 和 TensorRT 版本绑定，环境变化后应从 ONNX 重新生成兼容引擎。
+- TensorRT 序列化引擎通常与 GPU 架构、CUDA 和 TensorRT 版本绑定；后端已集成 ONNX Parser，可直接加载 `.onnx` 现场构建 engine 并缓存为同名 `.engine`，环境变化后删除缓存即可重建。
 
 ### 1.2 安装 OpenCV 与 OpenVINO
 
@@ -149,7 +149,7 @@ cmake -S . -B build-trt \
 cmake --build build-trt -j
 ```
 
-该选项会以 TensorRT 替代 OpenVINO 构建 `NNdeployment_lib`，并非在同一库中同时启用两个后端。当前 detector 示例的 JSON、模型目录与视频流程按 OpenVINO 配置；验证 TensorRT 时应通过公开接口传入兼容的 `.trt` 引擎路径、`sync` 模式和 `tensorrt` 后端。
+该选项会以 TensorRT 替代 OpenVINO 构建 `NNdeployment_lib`，并非在同一库中同时启用两个后端。后端按模型扩展名自动选择：`.onnx` 走内置 ONNX Parser 现场构建 engine（并缓存为同名 `.engine`），其它扩展名按序列化 engine 反序列化；`detect.json` 中对应节点的 `deploy_way` 设为 `tensorrt`，`xml` 可写 `onnx/xxx.onnx` 或 `tensorrt/xxx.engine`。
 
 ### 1.5 快速运行
 
@@ -215,7 +215,7 @@ ctest --test-dir build --output-on-failure -R '^detector_smoke$'
 
 ![Armor 四关键点、类别与颜色识别结果](resource/images/armor_example.jpg)
 
-`RuneModel::netProcess` 接收一帧 `cv::Mat` 图像，返回当前帧中全部有效能量机关结果。五个关键点依次为 `top`、`left`、`R`、`right`、`bottom`，即第 0、1、3、4 号点为符的逆时针四个角点，第 2 号点为符叶中心 R 标点。
+`RuneModel::netProcess` 接收一帧 `cv::Mat` 图像，返回当前帧中全部有效能Response was truncated before completion.量机关结果。五个关键点依次为 `top`、`left`、`R`、`right`、`bottom`，即第 0、1、3、4 号点为符的逆时针四个角点，第 2 号点为符叶中心 R 标点。
 
 `NetRuneResult` 的成员如下：
 
@@ -534,7 +534,7 @@ $$
 JsonConfig armor_config{
     "src/app_plugin/detector/config/detect.json",
     "armor_v8",
-    "所有模型/openvino"};
+    "所有模型"};
 ArmorDetector armor_detector(armor_config, 1); // 当前配置使用 async
 if (auto output = armor_detector.process(frame, 1)) {
     // output->image 与 output->results 属于同一输入帧；异步预热期间没有 output。
@@ -544,7 +544,7 @@ if (auto output = armor_detector.process(frame, 1)) {
 JsonConfig rune_config{
     "src/app_plugin/detector/config/detect.json",
     "rune_detect",
-    "所有模型/openvino"};
+    "所有模型"};
 RuneDetector rune_detector(rune_config, 0); // 当前配置使用 sync
 if (auto output = rune_detector.process(frame)) {
     consume(output->image, output->results);
@@ -565,7 +565,7 @@ if (auto output = rune_detector.process(frame)) {
 
 | 字段 | 含义 |
 | --- | --- |
-| `xml` | 相对于 `JsonConfig.model_folder` 的模型路径 |
+| `xml` | 模型路径。优先相对 `JsonConfig.model_folder` 解析；找不到时会回退到其父目录（模型仓库根，即 `所有模型/`）及在其下按文件名递归查找，因此可写 `onnx/xxx.onnx` 或直接写文件名 |
 | `infer_mode` | `sync`、`async` 或 `async4` |
 | `deploy_way` | `openvino` 或 `tensorrt` |
 | `postprocess_mode` | `auto` 或显式后处理类型 |

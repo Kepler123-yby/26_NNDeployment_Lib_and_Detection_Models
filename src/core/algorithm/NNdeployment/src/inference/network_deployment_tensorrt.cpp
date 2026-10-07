@@ -3,10 +3,14 @@
 #if NNDEPLOYMENT_WITH_TENSORRT
 
 #include <cmath>
+#include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
+#include <NvOnnxParser.h>
 #include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
 
@@ -65,27 +69,113 @@ void printTensorInfo(const nvinfer1::ICudaEngine *engine)
     }
     std::cout.flush();
 }
+
+// 读取二进制文件到内存。
+std::vector<char> readBinaryFile(const std::string &path)
+{
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file)
+        throw std::runtime_error("找不到 TensorRT 模型: " + path);
+
+    const std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    std::vector<char> data(static_cast<std::size_t>(size));
+    if (size > 0 && !file.read(data.data(), size))
+        throw std::runtime_error("读取 TensorRT 模型失败: " + path);
+    return data;
+}
+
+// 将序列化 engine 写入磁盘缓存；写失败时静默跳过（不影响本次推理）。
+void writeBinaryFile(const std::string &path, const void *data, std::size_t size)
+{
+    std::ofstream file(path, std::ios::binary);
+    if (!file)
+        return;
+    file.write(static_cast<const char *>(data), static_cast<std::streamsize>(size));
+}
+
+// 用 TensorRT 自带的 ONNX Parser 解析 .onnx 并现场构建序列化 engine。
+std::vector<char> buildEngineFromOnnx(const std::string &onnx_path, nvinfer1::ILogger &logger)
+{
+    std::unique_ptr<nvinfer1::IBuilder> builder(nvinfer1::createInferBuilder(logger));
+    if (!builder)
+        throw std::runtime_error("无法创建 TensorRT Builder");
+
+    const std::uint32_t explicit_batch =
+        1U << static_cast<std::uint32_t>(nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH);
+    std::unique_ptr<nvinfer1::INetworkDefinition> network(
+        builder->createNetworkV2(explicit_batch));
+    if (!network)
+        throw std::runtime_error("无法创建 TensorRT Network");
+
+    std::unique_ptr<nvonnxparser::IParser> parser(
+        nvonnxparser::createParser(*network, logger));
+    if (!parser)
+        throw std::runtime_error("无法创建 TensorRT ONNX Parser");
+
+    if (!parser->parseFromFile(
+            onnx_path.c_str(),
+            static_cast<int>(nvinfer1::ILogger::Severity::kWARNING)))
+        throw std::runtime_error("解析 ONNX 模型失败: " + onnx_path);
+
+    std::unique_ptr<nvinfer1::IBuilderConfig> config(builder->createBuilderConfig());
+    if (!config)
+        throw std::runtime_error("无法创建 TensorRT BuilderConfig");
+
+    // 本仓库模型为 fp16，允许 TensorRT 使用半精度，与 trtexec --fp16 行为一致。
+    config->setFlag(nvinfer1::BuilderFlag::kFP16);
+    config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kWORKSPACE, 1ULL << 30);
+
+    std::unique_ptr<nvinfer1::IHostMemory> serialized(
+        builder->buildSerializedNetwork(*network, *config));
+    if (!serialized)
+        throw std::runtime_error("构建 TensorRT engine 失败: " + onnx_path);
+
+    const char *begin = static_cast<const char *>(serialized->data());
+    return std::vector<char>(begin, begin + serialized->size());
+}
 } // namespace
 
 TensorRTEngine::TensorRTEngine(const YOLOModel::ModelConfig &model_config, const DebugConfig &debug_config) : InferenceEngine(model_config, debug_config)
 {
     // ==================== 初始化推理引擎 ====================
-    // 读取引擎文件
-    std::ifstream engine_file(m_model_config.model_path, std::ios::binary);
-    if (!engine_file)
-        throw std::runtime_error("找不到 TensorRT 模型: " + m_model_config.model_path);
+    // .onnx 直接走 TensorRT ONNX Parser 现场构建；其它文件按序列化 engine 加载。
+    const std::filesystem::path model_path(m_model_config.model_path);
+    const std::string extension = model_path.extension().string();
+    const bool is_onnx = extension == ".onnx" || extension == ".ONNX";
 
-    // 获取文件大小
-    engine_file.seekg(0, std::ios::end);
-    const size_t file_size = engine_file.tellg();
-    engine_file.seekg(0, std::ios::beg);
+    std::vector<char> engine_data;
+    if (is_onnx)
+    {
+        // 同名 .engine 作为构建缓存：存在且不早于 onnx 时直接复用。
+        std::filesystem::path cache_path = model_path;
+        cache_path.replace_extension(".engine");
 
-    // 以二进制文件形式加载模型内容
-    std::vector<char> engine_data(file_size);
-    if (!engine_file.read(engine_data.data(), file_size))
-        throw std::runtime_error("读取 TensorRT 模型失败: " + m_model_config.model_path);
+        std::error_code ec;
+        const bool cache_valid =
+            std::filesystem::is_regular_file(cache_path, ec) &&
+            std::filesystem::last_write_time(cache_path, ec) >=
+                std::filesystem::last_write_time(model_path, ec);
 
-    engine_file.close();
+        if (cache_valid)
+        {
+            engine_data = readBinaryFile(cache_path.string());
+        }
+        else
+        {
+            if (m_debug_config.print_debug_info)
+                std::cout << "从 ONNX 构建 TensorRT engine: " << model_path << std::endl;
+            engine_data = buildEngineFromOnnx(model_path.string(), m_logger);
+            writeBinaryFile(cache_path.string(), engine_data.data(), engine_data.size());
+        }
+    }
+    else
+    {
+        engine_data = readBinaryFile(m_model_config.model_path);
+    }
+
+    const size_t file_size = engine_data.size();
 
     // 创建TensorRT运行时对象
     m_runtime.reset(nvinfer1::createInferRuntime(m_logger));
