@@ -10,26 +10,99 @@ set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 #
 # 每个依赖都“检测到即编译”：同一次构建会把可用的后端全部编进同一个库，
 # 运行时由 YAML 配置的 deploy_way / preprocess_cuda / postprocess_cuda 选择，
-# 因此切换后端或 CUDA 只需改配置文件，不需要重新编译，也不用为不同机器维护
-# 多份构建脚本。路径可通过 -D<VAR>=<path> 覆盖，找不到的依赖会自动跳过。
+# 因此切换后端或 CUDA 只需改配置文件，不需要重新编译。
 #
-#   -DOpenCV_DIR=<带 CUDA 的 OpenCV 构建目录>    # 启用 OpenCV CUDA 预处理/后处理
-#   -DOPENVINO_DIR=<OpenVINO runtime/cmake>      # 也可用环境变量
+#   -DNNDEPLOYMENT_OPENCV_CUDA_DIR=<带CUDA的OpenCV cmake目录>   # 首选（也认同名环境变量）
+#   -DOpenCV_DIR=<OpenCV cmake 目录>                             # 通用 OpenCV 路径
+#   -DOPENVINO_DIR=<OpenVINO runtime/cmake>                     # 也可用环境变量
 #   -DTENSORRT_ROOT=<TensorRT 安装根目录>
 # ============================================================================
 set(OPENVINO_DIR "${OPENVINO_DIR}" CACHE PATH "OpenVINO runtime 的 cmake 目录（留空则用系统/环境变量）")
 set(TENSORRT_ROOT "" CACHE PATH "TensorRT 安装根目录（含 include/ 与 lib/）")
+set(NNDEPLOYMENT_OPENCV_CUDA_DIR "${NNDEPLOYMENT_OPENCV_CUDA_DIR}" CACHE PATH "带 CUDA 模块的 OpenCV cmake 目录（优先使用）")
 option(NNDEPLOYMENT_ENABLE_OPENVINO "检测到 OpenVINO 时编译该后端" ON)
 option(NNDEPLOYMENT_ENABLE_TENSORRT "检测到 TensorRT 时编译该后端" ON)
 option(NNDEPLOYMENT_ENABLE_OPENCV_CUDA "检测到 OpenCV CUDA 模块时启用预处理/后处理加速" ON)
 
-# OpenCV 为必需依赖；若 OpenCV_DIR 指向带 CUDA 模块的安装，会自动启用加速。
+# ---------------------------------------------------------------------------
+# 选择带 CUDA 的 OpenCV
+# 常见坑：build/CMakeCache.txt 里残留 OpenCV_DIR 指向无 CUDA 的系统 OpenCV
+# （如 /usr/lib/cmake/opencv4），会导致检测不到 CUDA。这里在 find_package 之前
+# 探测候选安装，优先选中带 cudaarithm/cudawarping 的那一份，并纠正旧缓存。
+# 判断方式是直接读 OpenCVModules.cmake，不做二次 find_package（否则会因导入
+# 目标重复而报 “Some but not all targets ... already defined”）。
+# ---------------------------------------------------------------------------
+function(nn_opencv_dir_has_cuda dir out_var)
+    set(${out_var} FALSE PARENT_SCOPE)
+    if(NOT EXISTS "${dir}/OpenCVModules.cmake")
+        return()
+    endif()
+    file(READ "${dir}/OpenCVModules.cmake" _nn_mods)
+    if(_nn_mods MATCHES "opencv_cudawarping" AND _nn_mods MATCHES "opencv_cudaarithm")
+        set(${out_var} TRUE PARENT_SCOPE)
+    endif()
+endfunction()
+
+set(_nn_opencv_candidates)
+if(DEFINED ENV{NNDEPLOYMENT_OPENCV_CUDA_DIR})
+    list(APPEND _nn_opencv_candidates "$ENV{NNDEPLOYMENT_OPENCV_CUDA_DIR}")
+endif()
+if(NNDEPLOYMENT_OPENCV_CUDA_DIR)
+    list(APPEND _nn_opencv_candidates "${NNDEPLOYMENT_OPENCV_CUDA_DIR}")
+endif()
+if(OpenCV_DIR)
+    list(APPEND _nn_opencv_candidates "${OpenCV_DIR}")
+endif()
+list(APPEND _nn_opencv_candidates
+    /usr/local/lib/cmake/opencv4
+    /usr/local/lib/cmake/OpenCV
+    /usr/lib/cmake/opencv4
+    /usr/lib/aarch64-linux-gnu/cmake/opencv4
+    /usr/lib/x86_64-linux-gnu/cmake/opencv4
+)
+
+if(NNDEPLOYMENT_ENABLE_OPENCV_CUDA)
+    set(_nn_opencv_cuda_dir "")
+    foreach(_nn_dir ${_nn_opencv_candidates})
+        nn_opencv_dir_has_cuda("${_nn_dir}" _nn_has)
+        if(_nn_has)
+            set(_nn_opencv_cuda_dir "${_nn_dir}")
+            break()
+        endif()
+    endforeach()
+
+    if(_nn_opencv_cuda_dir)
+        # 显式指定的 OpenCV_DIR（含旧缓存值）不含 CUDA 时，警告并改用带 CUDA 的那一份。
+        if(OpenCV_DIR AND NOT OpenCV_DIR STREQUAL _nn_opencv_cuda_dir)
+            nn_opencv_dir_has_cuda("${OpenCV_DIR}" _nn_cur_has)
+            if(NOT _nn_cur_has)
+                message(WARNING "NNdeployment: 指定的 OpenCV_DIR=${OpenCV_DIR} 不含 CUDA 模块，自动改用 ${_nn_opencv_cuda_dir}；如需强制使用指定版本，请加 -DNNDEPLOYMENT_ENABLE_OPENCV_CUDA=OFF")
+            endif()
+        endif()
+        set(OpenCV_DIR "${_nn_opencv_cuda_dir}" CACHE PATH "OpenCV 配置目录（优先带 CUDA 模块）" FORCE)
+        message(STATUS "NNdeployment: 选用带 CUDA 模块的 OpenCV：${_nn_opencv_cuda_dir}")
+    else()
+        message(STATUS "NNdeployment: 未找到带 CUDA 模块的 OpenCV（可用 -DNNDEPLOYMENT_OPENCV_CUDA_DIR=<...> 指定）")
+    endif()
+endif()
+
+# OpenCV 为必需依赖。
 find_package(OpenCV REQUIRED)
 # 模型配置文件使用 YAML（与 qianli_vision 一致）。
 find_package(yaml-cpp REQUIRED)
 
 # CUDA Toolkit（TensorRT 与 OpenCV CUDA 都可能需要）。
 find_package(CUDAToolkit QUIET)
+
+# nvcc 不在 PATH 时（远程命令 / IDE / CI 的非登录 shell 常见），用 CUDAToolkit
+# 找到的 nvcc 兜底设置 CMAKE_CUDA_COMPILER，否则 enable_language(CUDA) 会失败。
+if(CUDAToolkit_FOUND AND CUDAToolkit_NVCC_EXECUTABLE AND EXISTS "${CUDAToolkit_NVCC_EXECUTABLE}")
+    find_program(_nn_nvcc_in_path nvcc)
+    if(NOT _nn_nvcc_in_path)
+        message(STATUS "NNdeployment: nvcc 不在 PATH，改用 CUDAToolkit 提供的 ${CUDAToolkit_NVCC_EXECUTABLE}")
+        set(CMAKE_CUDA_COMPILER "${CUDAToolkit_NVCC_EXECUTABLE}" CACHE FILEPATH "CUDA 编译器" FORCE)
+    endif()
+endif()
 
 # ---------------------------------------------------------------------------
 # OpenVINO 后端
@@ -105,9 +178,16 @@ if(NNDEPLOYMENT_ENABLE_OPENCV_CUDA AND CUDAToolkit_FOUND AND
    TARGET opencv_cudawarping AND TARGET opencv_cudaarithm)
     enable_language(CUDA)
     set(NNDEPLOYMENT_WITH_OPENCV_CUDA ON)
-    message(STATUS "NNdeployment: 启用 OpenCV CUDA 预处理/后处理")
+    message(STATUS "NNdeployment: 启用 OpenCV CUDA 预处理/后处理 (OpenCV ${OpenCV_VERSION} @ ${OpenCV_DIR})")
 else()
-    message(STATUS "NNdeployment: 未启用 OpenCV CUDA（未检测到带 CUDA 的 OpenCV）")
+    # 按原因分类提示，并给出修复命令，避免只打印一句容易被忽略的 STATUS。
+    if(NOT NNDEPLOYMENT_ENABLE_OPENCV_CUDA)
+        message(STATUS "NNdeployment: OpenCV CUDA 被手动关闭（-DNNDEPLOYMENT_ENABLE_OPENCV_CUDA=OFF）")
+    elseif(NOT CUDAToolkit_FOUND)
+        message(STATUS "NNdeployment: 未启用 OpenCV CUDA —— 未找到 CUDA Toolkit（安装 CUDA，或用 -DCUDAToolkit_ROOT=<...> 指定）")
+    else()
+        message(STATUS "NNdeployment: 未启用 OpenCV CUDA —— 当前 OpenCV 无 CUDA 模块（用 -DNNDEPLOYMENT_OPENCV_CUDA_DIR=<带 CUDA 的 OpenCV cmake 目录> 指定；若旧缓存把 OpenCV_DIR 固定在无 CUDA 版本，也可直接删掉 build/ 重配）")
+    endif()
 endif()
 
 if(NOT NNDEPLOYMENT_WITH_OPENVINO AND NOT NNDEPLOYMENT_WITH_TENSORRT)
@@ -156,6 +236,15 @@ if(NNDEPLOYMENT_WITH_OPENCV_CUDA)
 endif()
 
 add_library(${lib_name}_lib SHARED ${NNdeployment_src})
+
+if(NNDEPLOYMENT_WITH_OPENCV_CUDA)
+    # 本目标同时含 C++ 与 CUDA 源码：交给 nvcc 链接，并把 CUDA 运行时设为共享库。
+    # 否则 CMake 会用 CXX 链接器，并追加裸库名 cudadevrt;cudart，导致找不到 -lcudadevrt/-lcudart。
+    set_target_properties(${lib_name}_lib PROPERTIES
+        CUDA_RUNTIME_LIBRARY Shared
+        LINKER_LANGUAGE CUDA
+    )
+endif()
 
 add_library(${lib_name}_mpt_lib STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/performance/network_performance.cpp
