@@ -38,6 +38,9 @@ public:
     int inputHeight() const override;
     const float *syncInfer(const cv::Mat &pre_processed_image) override;
     const float *asyncInfer(const cv::Mat &pre_processed_image) override;
+    // 启用 preprocess_cuda 时：在 GPU 上融合完成 resize/pad + BGR→RGB + /255 + HWC→CHW，
+    // 直接写入 TensorRT 输入显存，避免 CPU 的 blobFromImage。
+    cv::Mat preProcessImage(const cv::Mat &origin_image) override;
 
 private:
     // TensorRT相关成员
@@ -59,6 +62,7 @@ private:
     int m_output_anchors = 0;      // 输出张量的锚框数量
     size_t m_input_volume = 0;     // 输入数据量(NCHW形式)
     size_t m_output_volume = 0;    // 输出数据量(NHW)
+    bool m_input_on_device = false; // 输入是否已由 GPU 融合预处理写入显存
 };
 
 #endif

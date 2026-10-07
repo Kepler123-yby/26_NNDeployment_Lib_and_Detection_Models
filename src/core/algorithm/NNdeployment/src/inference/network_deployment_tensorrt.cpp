@@ -14,6 +14,10 @@
 #include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
 
+#if NNDEPLOYMENT_WITH_OPENCV_CUDA
+#include "network_preprocess_cuda.hpp"
+#endif
+
 namespace
 {
 void printTensorInfo(const nvinfer1::ICudaEngine *engine)
@@ -246,16 +250,40 @@ int TensorRTEngine::inputHeight() const
     return m_target_height;
 }
 
+// 启用 preprocess_cuda 时，在 GPU 上融合完成 letterbox + BGR→RGB + /255 + HWC→CHW，
+// 直接写入 TensorRT 输入显存并回填坐标参数；否则使用通用 CPU 预处理。
+cv::Mat TensorRTEngine::preProcessImage(const cv::Mat &origin_image)
+{
+#if NNDEPLOYMENT_WITH_OPENCV_CUDA
+    if (m_model_config.preprocess_cuda)
+    {
+        if (MPT::cudaFuseTensorRTInput(origin_image, m_target_width, m_target_height,
+                                       static_cast<float *>(m_buffers[m_input_index]),
+                                       m_cuda_stream, m_infer_param))
+        {
+            m_input_on_device = true;
+            // 占位返回：infer 会直接使用设备端输入，不会读取该返回值。
+            return origin_image;
+        }
+    }
+#endif
+    m_input_on_device = false;
+    return YOLOModel::InferenceEngine::preProcessImage(origin_image);
+}
+
 const float *TensorRTEngine::syncInfer(const cv::Mat &pre_processed_image)
 {
-    cv::dnn::blobFromImage(pre_processed_image, m_blob, 1 / 255.0,
-                           cv::Size(m_target_width, m_target_height),
-                           cv::Scalar(0, 0, 0), true, false, CV_32F);
+    if (!m_input_on_device)
+    {
+        cv::dnn::blobFromImage(pre_processed_image, m_blob, 1 / 255.0,
+                               cv::Size(m_target_width, m_target_height),
+                               cv::Scalar(0, 0, 0), true, false, CV_32F);
 
-    memcpy(m_blob_pinned, m_blob.data, m_blob.total() * m_blob.elemSize());
+        memcpy(m_blob_pinned, m_blob.data, m_blob.total() * m_blob.elemSize());
 
-    cudaMemcpyAsync(m_buffers[m_input_index], m_blob_pinned,
-                    m_input_volume, cudaMemcpyHostToDevice, m_cuda_stream);
+        cudaMemcpyAsync(m_buffers[m_input_index], m_blob_pinned,
+                        m_input_volume, cudaMemcpyHostToDevice, m_cuda_stream);
+    }
 
     m_context->enqueueV3(m_cuda_stream);
 
@@ -264,19 +292,23 @@ const float *TensorRTEngine::syncInfer(const cv::Mat &pre_processed_image)
 
     cudaStreamSynchronize(m_cuda_stream);
 
+    m_input_on_device = false;
     return m_rst;
 }
 
 const float *TensorRTEngine::asyncInfer(const cv::Mat &pre_processed_image)
 {
-    cv::dnn::blobFromImage(pre_processed_image, m_blob, 1 / 255.0,
-                           cv::Size(m_target_width, m_target_height),
-                           cv::Scalar(0, 0, 0), true, false, CV_32F);
+    if (!m_input_on_device)
+    {
+        cv::dnn::blobFromImage(pre_processed_image, m_blob, 1 / 255.0,
+                               cv::Size(m_target_width, m_target_height),
+                               cv::Scalar(0, 0, 0), true, false, CV_32F);
 
-    memcpy(m_blob_pinned, m_blob.data, m_blob.total() * m_blob.elemSize());
+        memcpy(m_blob_pinned, m_blob.data, m_blob.total() * m_blob.elemSize());
 
-    cudaMemcpyAsync(m_buffers[m_input_index], m_blob_pinned,
-                    m_input_volume, cudaMemcpyHostToDevice, m_cuda_stream);
+        cudaMemcpyAsync(m_buffers[m_input_index], m_blob_pinned,
+                        m_input_volume, cudaMemcpyHostToDevice, m_cuda_stream);
+    }
 
     m_context->enqueueV3(m_cuda_stream);
 
@@ -285,6 +317,7 @@ const float *TensorRTEngine::asyncInfer(const cv::Mat &pre_processed_image)
 
     cudaStreamSynchronize(m_cuda_stream);
 
+    m_input_on_device = false;
     return m_rst;
 }
 
