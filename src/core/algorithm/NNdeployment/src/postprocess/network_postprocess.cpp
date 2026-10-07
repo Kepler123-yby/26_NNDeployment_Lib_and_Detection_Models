@@ -782,7 +782,7 @@ std::vector<NetArmorResult> LidarPostProcessor::postProcessArmorMat(const float 
 }
 
 // ==================== 符实现 ====================
-// 初始化神符后处理器。
+// 初始化大符后处理器。
 RunePostProcessor::RunePostProcessor(const YOLOModel::ModelConfig &model_config, float nms_threshold)
     : PostProcessor(model_config, nms_threshold) {}
 
@@ -905,7 +905,7 @@ void centerDistanceNMS(
 }
 } // namespace
 
-// 解析神符模型输出并生成符叶检测结果。
+// 解析大符模型输出并生成符叶检测结果。
 std::vector<NetRuneResult> RunePostProcessor::postProcessRuneMat(const float *input_ptr, const InferParam &infer_param, const void *device_ptr)
 {
     const float confidence_threshold = m_model_config.confidence_threshold;

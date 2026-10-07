@@ -120,7 +120,7 @@ void testMismatchedTask(const fs::path &root)
     {
         armor_rejected = true;
     }
-    require(armor_rejected, "ArmorDetector 未拒绝神符模型");
+    require(armor_rejected, "ArmorDetector 未拒绝大符模型");
 
     bool rune_rejected = false;
     try

@@ -1,6 +1,6 @@
 # NNdeployment 使用示例
 
-调用方只需包含 `network_deployment_interface.hpp`。装甲板和神符使用不同类型，构建后不会暴露另一种结果接口。
+调用方只需包含 `network_deployment_interface.hpp`。装甲板和大符使用不同类型，构建后不会暴露另一种结果接口。
 
 ## 构造参数
 

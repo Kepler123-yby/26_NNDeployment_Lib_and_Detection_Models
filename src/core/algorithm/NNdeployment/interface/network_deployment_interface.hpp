@@ -44,7 +44,7 @@ struct NetArmorResult
     std::string color_name;
 };
 
-// 神符检测结果，坐标均为原图像素坐标。
+// 大符检测结果，坐标均为原图像素坐标。
 struct NetRuneResult
 {
     std::vector<cv::Point2d> points; // top、left、R、right、bottom。
@@ -101,7 +101,7 @@ private:
     std::unique_ptr<YOLOModel> m_model;
 };
 
-// 只产生神符结果的网络模型。对象不可复制，可以移动。
+// 只产生大符结果的网络模型。对象不可复制，可以移动。
 class RuneModel
 {
 public:
@@ -128,7 +128,7 @@ public:
     RuneModel(RuneModel &&) noexcept;
     RuneModel &operator=(RuneModel &&) noexcept;
 
-    // 执行神符推理；无有效结果时返回空 vector，模型任务不匹配会在构造时抛出异常。
+    // 执行大符推理；无有效结果时返回空 vector，模型任务不匹配会在构造时抛出异常。
     std::vector<NetRuneResult> netProcess(const cv::Mat &input_image);
 
 private:
