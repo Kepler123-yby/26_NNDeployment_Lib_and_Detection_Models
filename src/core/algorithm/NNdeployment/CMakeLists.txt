@@ -144,7 +144,13 @@ endif()
 if(NNDEPLOYMENT_WITH_OPENCV_CUDA)
     list(APPEND NNdeployment_src
         ${CMAKE_CURRENT_SOURCE_DIR}/src/preprocess/network_preprocess_cuda.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/postprocess/network_postprocess_cuda.cu
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/postprocess/network_postprocess_cuda.cpp
+    )
+    # 该文件包含 CUDA 设备代码（__global__ kernel 与 <<<>>> 启动），必须由 nvcc 编译。
+    # 这里保持 .cpp 扩展名，但显式把它的语言指定为 CUDA，仍交给 nvcc。
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/postprocess/network_postprocess_cuda.cpp
+        PROPERTIES LANGUAGE CUDA
     )
 endif()
 

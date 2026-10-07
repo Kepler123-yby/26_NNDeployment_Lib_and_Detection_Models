@@ -196,7 +196,7 @@ __global__ void decodeLidarKernel(const float *data, int num_candidates, int fea
     }
 }
 
-// 神符：输出为 特征 × 候选。类别在 0..2，关键点从 3 开始按步长 3 排布（第三个数为关键点置信度）。
+// 大符：输出为 特征 × 候选。类别在 0..2，关键点从 3 开始按步长 3 排布（第三个数为关键点置信度）。
 __global__ void decodeRuneKernel(const float *data, int num_candidates, int feature_stride,
                                  float confidence_threshold,
                                  int *count, int *class_ids,

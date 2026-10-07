@@ -23,7 +23,7 @@ struct CudaArmorCandidates
     std::vector<cv::Rect> boxes;        // 边界框（用于OpenCV NMS算法）
 };
 
-// 神符候选解码结果。
+// 大符候选解码结果。
 struct CudaRuneCandidates
 {
     std::vector<int> class_ids;         // 符叶类别ID
@@ -43,7 +43,7 @@ CudaArmorCandidates cudaDecodeArmorV8(const float *input_ptr, const InferParam &
 CudaArmorCandidates cudaDecodeLidar(const float *input_ptr, const InferParam &infer_param,
                                     float confidence_threshold);
 
-// 神符模型解码：输出为 特征 × 候选。
+// 大符模型解码：输出为 特征 × 候选。
 CudaRuneCandidates cudaDecodeRune(const float *input_ptr, const InferParam &infer_param,
                                   float confidence_threshold);
 } // namespace MPT
