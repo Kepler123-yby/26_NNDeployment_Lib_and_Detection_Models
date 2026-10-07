@@ -7,7 +7,7 @@ armor_v8:
   device: GPU
   score_threshold: 0.5
   preprocess_cuda: true
-  postprocess_cuda: true
+  postprocess_cuda: false
 armor_v5:
   xml: onnx/Infantry-v8n-fp16-20260726-D1.8w-B16.onnx
   infer_mode: async
