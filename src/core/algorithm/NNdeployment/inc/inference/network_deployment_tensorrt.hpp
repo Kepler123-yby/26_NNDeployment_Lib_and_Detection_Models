@@ -41,6 +41,8 @@ public:
     // 启用 preprocess_cuda 时：在 GPU 上融合完成 resize/pad + BGR→RGB + /255 + HWC→CHW，
     // 直接写入 TensorRT 输入显存，避免 CPU 的 blobFromImage。
     cv::Mat preProcessImage(const cv::Mat &origin_image) override;
+    // 后处理启用 CUDA 时，输出直接留在显存供后处理读取，不拷回主机。
+    const void *deviceOutputPtr() const override;
 
 private:
     // TensorRT相关成员
@@ -63,6 +65,7 @@ private:
     size_t m_input_volume = 0;     // 输入数据量(NCHW形式)
     size_t m_output_volume = 0;    // 输出数据量(NHW)
     bool m_input_on_device = false; // 输入是否已由 GPU 融合预处理写入显存
+    bool m_output_on_device = false; // 输出是否保存在显存（未拷回主机）
 };
 
 #endif

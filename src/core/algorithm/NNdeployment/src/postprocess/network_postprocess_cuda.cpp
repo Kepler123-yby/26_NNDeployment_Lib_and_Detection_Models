@@ -349,15 +349,25 @@ CudaArmorCandidates collectArmorCandidates(const ArmorScratch &scratch,
 } // namespace
 
 CudaArmorCandidates cudaDecodeArmorV5(const float *input_ptr, const InferParam &infer_param,
-                                      float confidence_threshold, int my_color)
+                                      float confidence_threshold, int my_color,
+                                      const void *device_input)
 {
     const int num_candidates = infer_param.out_tensor_rows;
     const int num_features = infer_param.out_tensor_cols;
 
     ArmorScratch &scratch = armorScratch();
     const std::size_t total = static_cast<std::size_t>(num_candidates) * num_features;
-    scratch.input.create(1, static_cast<int>(total), CV_32F);
-    cudaMemcpy(scratch.input.data, input_ptr, total * sizeof(float), cudaMemcpyHostToDevice);
+    const float *data_ptr = nullptr;
+    if (device_input != nullptr)
+    {
+        data_ptr = static_cast<const float *>(device_input);
+    }
+    else
+    {
+        scratch.input.create(1, static_cast<int>(total), CV_32F);
+        cudaMemcpy(scratch.input.data, input_ptr, total * sizeof(float), cudaMemcpyHostToDevice);
+        data_ptr = reinterpret_cast<const float *>(scratch.input.data);
+    }
 
     scratch.class_ids.create(1, num_candidates, CV_32S);
     scratch.colors.create(1, num_candidates, CV_32S);
@@ -370,7 +380,7 @@ CudaArmorCandidates cudaDecodeArmorV5(const float *input_ptr, const InferParam &
     const float raw_threshold = static_cast<float>(std::log(threshold / (1.0f - threshold)));
 
     decodeArmorV5Kernel<<<gridSize(num_candidates), kBlockSize>>>(
-        reinterpret_cast<const float *>(scratch.input.data), num_candidates, num_features,
+        data_ptr, num_candidates, num_features,
         raw_threshold, my_color,
         reinterpret_cast<int *>(scratch.count.data),
         reinterpret_cast<int *>(scratch.class_ids.data),
@@ -383,15 +393,25 @@ CudaArmorCandidates cudaDecodeArmorV5(const float *input_ptr, const InferParam &
 }
 
 CudaArmorCandidates cudaDecodeArmorV8(const float *input_ptr, const InferParam &infer_param,
-                                      float confidence_threshold, int my_color, int point_stride)
+                                      float confidence_threshold, int my_color, int point_stride,
+                                      const void *device_input)
 {
     const int num_candidates = infer_param.out_tensor_cols;
     const int num_features = infer_param.out_tensor_rows;
 
     ArmorScratch &scratch = armorScratch();
     const std::size_t total = static_cast<std::size_t>(num_candidates) * num_features;
-    scratch.input.create(1, static_cast<int>(total), CV_32F);
-    cudaMemcpy(scratch.input.data, input_ptr, total * sizeof(float), cudaMemcpyHostToDevice);
+    const float *data_ptr = nullptr;
+    if (device_input != nullptr)
+    {
+        data_ptr = static_cast<const float *>(device_input);
+    }
+    else
+    {
+        scratch.input.create(1, static_cast<int>(total), CV_32F);
+        cudaMemcpy(scratch.input.data, input_ptr, total * sizeof(float), cudaMemcpyHostToDevice);
+        data_ptr = reinterpret_cast<const float *>(scratch.input.data);
+    }
 
     scratch.class_ids.create(1, num_candidates, CV_32S);
     scratch.colors.create(1, num_candidates, CV_32S);
@@ -400,11 +420,10 @@ CudaArmorCandidates cudaDecodeArmorV8(const float *input_ptr, const InferParam &
     scratch.count.create(1, 1, CV_32S);
     scratch.count.setTo(cv::Scalar(0));
 
-    const float *input_device = reinterpret_cast<const float *>(scratch.input.data);
     if (point_stride == 2)
     {
         decodeArmorV8Kernel<2><<<gridSize(num_candidates), kBlockSize>>>(
-            input_device, num_candidates, num_candidates, confidence_threshold, my_color,
+            data_ptr, num_candidates, num_candidates, confidence_threshold, my_color,
             reinterpret_cast<int *>(scratch.count.data),
             reinterpret_cast<int *>(scratch.class_ids.data),
             reinterpret_cast<int *>(scratch.colors.data),
@@ -414,7 +433,7 @@ CudaArmorCandidates cudaDecodeArmorV8(const float *input_ptr, const InferParam &
     else
     {
         decodeArmorV8Kernel<3><<<gridSize(num_candidates), kBlockSize>>>(
-            input_device, num_candidates, num_candidates, confidence_threshold, my_color,
+            data_ptr, num_candidates, num_candidates, confidence_threshold, my_color,
             reinterpret_cast<int *>(scratch.count.data),
             reinterpret_cast<int *>(scratch.class_ids.data),
             reinterpret_cast<int *>(scratch.colors.data),
@@ -427,15 +446,25 @@ CudaArmorCandidates cudaDecodeArmorV8(const float *input_ptr, const InferParam &
 }
 
 CudaArmorCandidates cudaDecodeLidar(const float *input_ptr, const InferParam &infer_param,
-                                    float confidence_threshold)
+                                    float confidence_threshold,
+                                    const void *device_input)
 {
     const int num_candidates = infer_param.out_tensor_cols;
     const int num_features = infer_param.out_tensor_rows;
 
     ArmorScratch &scratch = armorScratch();
     const std::size_t total = static_cast<std::size_t>(num_candidates) * num_features;
-    scratch.input.create(1, static_cast<int>(total), CV_32F);
-    cudaMemcpy(scratch.input.data, input_ptr, total * sizeof(float), cudaMemcpyHostToDevice);
+    const float *data_ptr = nullptr;
+    if (device_input != nullptr)
+    {
+        data_ptr = static_cast<const float *>(device_input);
+    }
+    else
+    {
+        scratch.input.create(1, static_cast<int>(total), CV_32F);
+        cudaMemcpy(scratch.input.data, input_ptr, total * sizeof(float), cudaMemcpyHostToDevice);
+        data_ptr = reinterpret_cast<const float *>(scratch.input.data);
+    }
 
     scratch.class_ids.create(1, num_candidates, CV_32S);
     scratch.colors.create(1, num_candidates, CV_32S);
@@ -446,7 +475,7 @@ CudaArmorCandidates cudaDecodeLidar(const float *input_ptr, const InferParam &in
     scratch.count.setTo(cv::Scalar(0));
 
     decodeLidarKernel<<<gridSize(num_candidates), kBlockSize>>>(
-        reinterpret_cast<const float *>(scratch.input.data), num_candidates, num_candidates,
+        data_ptr, num_candidates, num_candidates,
         confidence_threshold,
         reinterpret_cast<int *>(scratch.count.data),
         reinterpret_cast<int *>(scratch.class_ids.data),
@@ -459,15 +488,25 @@ CudaArmorCandidates cudaDecodeLidar(const float *input_ptr, const InferParam &in
 }
 
 CudaRuneCandidates cudaDecodeRune(const float *input_ptr, const InferParam &infer_param,
-                                  float confidence_threshold)
+                                  float confidence_threshold,
+                                  const void *device_input)
 {
     const int num_candidates = infer_param.out_tensor_cols;
     const int num_features = infer_param.out_tensor_rows;
 
     ArmorScratch &scratch = armorScratch();
     const std::size_t total = static_cast<std::size_t>(num_candidates) * num_features;
-    scratch.input.create(1, static_cast<int>(total), CV_32F);
-    cudaMemcpy(scratch.input.data, input_ptr, total * sizeof(float), cudaMemcpyHostToDevice);
+    const float *data_ptr = nullptr;
+    if (device_input != nullptr)
+    {
+        data_ptr = static_cast<const float *>(device_input);
+    }
+    else
+    {
+        scratch.input.create(1, static_cast<int>(total), CV_32F);
+        cudaMemcpy(scratch.input.data, input_ptr, total * sizeof(float), cudaMemcpyHostToDevice);
+        data_ptr = reinterpret_cast<const float *>(scratch.input.data);
+    }
 
     scratch.class_ids.create(1, num_candidates, CV_32S);
     scratch.confidences.create(1, num_candidates, CV_32F);
@@ -476,7 +515,7 @@ CudaRuneCandidates cudaDecodeRune(const float *input_ptr, const InferParam &infe
     scratch.count.setTo(cv::Scalar(0));
 
     decodeRuneKernel<<<gridSize(num_candidates), kBlockSize>>>(
-        reinterpret_cast<const float *>(scratch.input.data), num_candidates, num_candidates,
+        data_ptr, num_candidates, num_candidates,
         confidence_threshold,
         reinterpret_cast<int *>(scratch.count.data),
         reinterpret_cast<int *>(scratch.class_ids.data),

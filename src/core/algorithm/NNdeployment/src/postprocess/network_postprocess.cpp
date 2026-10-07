@@ -125,12 +125,12 @@ V5InfantryPostProcessor::V5InfantryPostProcessor(const YOLOModel::ModelConfig &m
     : PostProcessor(model_config, nms_threshold), m_last_results(buildInitialArmorHistory()) {}
 
 // 解析 V5 步兵模型输出并生成装甲板检测结果。
-std::vector<NetArmorResult> V5InfantryPostProcessor::postProcessArmorMat(const float *input_ptr, const InferParam &infer_param, const int &my_color)
+std::vector<NetArmorResult> V5InfantryPostProcessor::postProcessArmorMat(const float *input_ptr, const InferParam &infer_param, const int &my_color, const void *device_ptr)
 {
     const float confidence_threshold = m_model_config.confidence_threshold;
     const float nms_threshold = m_nms_threshold;
 
-    if (!input_ptr || infer_param.out_tensor_cols != (4 * 2 + 1 + 4 + 9))
+    if ((!input_ptr && !device_ptr) || infer_param.out_tensor_cols != (4 * 2 + 1 + 4 + 9))
     {
         std::cerr << "模型输出形状不匹配，请检查模型路径" << std::endl;
         return {};
@@ -154,7 +154,7 @@ std::vector<NetArmorResult> V5InfantryPostProcessor::postProcessArmorMat(const f
     if (m_model_config.postprocess_cuda)
     {
         MPT::CudaArmorCandidates decoded =
-            MPT::cudaDecodeArmorV5(input_ptr, infer_param, confidence_threshold, my_color);
+            MPT::cudaDecodeArmorV5(input_ptr, infer_param, confidence_threshold, my_color, device_ptr);
         class_ids_temp = std::move(decoded.class_ids);
         confidences_temp = std::move(decoded.confidences);
         sizes_temp = std::move(decoded.sizes);
@@ -308,12 +308,12 @@ V8_21InfantryPostProcessor::V8_21InfantryPostProcessor(const YOLOModel::ModelCon
     : PostProcessor(model_config, nms_threshold), m_last_results(buildInitialArmorHistory()) {}
 
 // 解析 V8 21维步兵模型输出并生成装甲板检测结果。
-std::vector<NetArmorResult> V8_21InfantryPostProcessor::postProcessArmorMat(const float *input_ptr, const InferParam &infer_param, const int &my_color)
+std::vector<NetArmorResult> V8_21InfantryPostProcessor::postProcessArmorMat(const float *input_ptr, const InferParam &infer_param, const int &my_color, const void *device_ptr)
 {
     const float confidence_threshold = m_model_config.confidence_threshold;
     const float nms_threshold = m_nms_threshold;
 
-    if (!input_ptr || infer_param.out_tensor_rows != (4 + 9 + 4 * 2))
+    if ((!input_ptr && !device_ptr) || infer_param.out_tensor_rows != (4 + 9 + 4 * 2))
     {
         std::cerr << "模型输出形状不匹配，请检查模型路径" << std::endl;
         return {};
@@ -335,7 +335,7 @@ std::vector<NetArmorResult> V8_21InfantryPostProcessor::postProcessArmorMat(cons
     if (m_model_config.postprocess_cuda)
     {
         MPT::CudaArmorCandidates decoded =
-            MPT::cudaDecodeArmorV8(input_ptr, infer_param, confidence_threshold, my_color, 2);
+            MPT::cudaDecodeArmorV8(input_ptr, infer_param, confidence_threshold, my_color, 2, device_ptr);
         class_ids_temp = std::move(decoded.class_ids);
         confidences_temp = std::move(decoded.confidences);
         sizes_temp = std::move(decoded.sizes);
@@ -469,12 +469,12 @@ std::vector<NetArmorResult> V8_21InfantryPostProcessor::postProcessArmorMat(cons
 
 // ==================== v8步兵实现 ====================
 // 解析 V8 步兵模型输出并生成装甲板检测结果。
-std::vector<NetArmorResult> V8InfantryPostProcessor::postProcessArmorMat(const float *input_ptr, const InferParam &infer_param, const int &my_color)
+std::vector<NetArmorResult> V8InfantryPostProcessor::postProcessArmorMat(const float *input_ptr, const InferParam &infer_param, const int &my_color, const void *device_ptr)
 {
     const float confidence_threshold = m_model_config.confidence_threshold;
     const float nms_threshold = m_nms_threshold;
 
-    if (!input_ptr || infer_param.out_tensor_rows != (4 + 9 + 4 * 3))
+    if ((!input_ptr && !device_ptr) || infer_param.out_tensor_rows != (4 + 9 + 4 * 3))
     {
         std::cerr << "模型输出形状不匹配，请检查模型路径" << std::endl;
         return {};
@@ -494,7 +494,7 @@ std::vector<NetArmorResult> V8InfantryPostProcessor::postProcessArmorMat(const f
     if (m_model_config.postprocess_cuda)
     {
         MPT::CudaArmorCandidates decoded =
-            MPT::cudaDecodeArmorV8(input_ptr, infer_param, confidence_threshold, my_color, 3);
+            MPT::cudaDecodeArmorV8(input_ptr, infer_param, confidence_threshold, my_color, 3, device_ptr);
         class_ids_temp = std::move(decoded.class_ids);
         confidences_temp = std::move(decoded.confidences);
         sizes_temp = std::move(decoded.sizes);
@@ -636,13 +636,13 @@ LidarPostProcessor::LidarPostProcessor(const YOLOModel::ModelConfig &model_confi
     : PostProcessor(model_config, nms_threshold) {}
 
 // 解析雷达模型输出并生成装甲板检测结果。
-std::vector<NetArmorResult> LidarPostProcessor::postProcessArmorMat(const float *input_ptr, const InferParam &infer_param, const int &my_color)
+std::vector<NetArmorResult> LidarPostProcessor::postProcessArmorMat(const float *input_ptr, const InferParam &infer_param, const int &my_color, const void *device_ptr)
 {
     static_cast<void>(my_color);
     const float confidence_threshold = m_model_config.confidence_threshold;
     const float nms_threshold = m_nms_threshold;
 
-    if (!input_ptr || infer_param.out_tensor_rows != (4 + 10 + 4 * 3))
+    if ((!input_ptr && !device_ptr) || infer_param.out_tensor_rows != (4 + 10 + 4 * 3))
     {
         std::cerr << "模型输出形状不匹配，请检查模型路径" << std::endl;
         return {};
@@ -658,7 +658,7 @@ std::vector<NetArmorResult> LidarPostProcessor::postProcessArmorMat(const float 
     if (m_model_config.postprocess_cuda)
     {
         MPT::CudaArmorCandidates decoded =
-            MPT::cudaDecodeLidar(input_ptr, infer_param, confidence_threshold);
+            MPT::cudaDecodeLidar(input_ptr, infer_param, confidence_threshold, device_ptr);
         class_ids_temp = std::move(decoded.class_ids);
         confidences_temp = std::move(decoded.confidences);
         keypoints_temp = std::move(decoded.keypoints);
@@ -906,12 +906,12 @@ void centerDistanceNMS(
 } // namespace
 
 // 解析神符模型输出并生成符叶检测结果。
-std::vector<NetRuneResult> RunePostProcessor::postProcessRuneMat(const float *input_ptr, const InferParam &infer_param)
+std::vector<NetRuneResult> RunePostProcessor::postProcessRuneMat(const float *input_ptr, const InferParam &infer_param, const void *device_ptr)
 {
     const float confidence_threshold = m_model_config.confidence_threshold;
     const float nms_threshold = m_nms_threshold;
 
-    if (!input_ptr || infer_param.out_tensor_rows != (3 + 5 * 3))
+    if ((!input_ptr && !device_ptr) || infer_param.out_tensor_rows != (3 + 5 * 3))
     {
         std::cerr << "模型输出形状不匹配，请检查模型路径" << std::endl;
         return {};
@@ -928,7 +928,7 @@ std::vector<NetRuneResult> RunePostProcessor::postProcessRuneMat(const float *in
     if (m_model_config.postprocess_cuda)
     {
         MPT::CudaRuneCandidates decoded =
-            MPT::cudaDecodeRune(input_ptr, infer_param, confidence_threshold);
+            MPT::cudaDecodeRune(input_ptr, infer_param, confidence_threshold, device_ptr);
         class_ids_temp = std::move(decoded.class_ids);
         confidences_temp = std::move(decoded.confidences);
         keypoints_temp = std::move(decoded.keypoints);

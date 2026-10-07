@@ -534,7 +534,8 @@ std::vector<NetArmorResult> YOLOModel::netProcess(const cv::Mat &input_image, co
     if (measure)
         phase_start = PerformanceClock::now();
     std::vector<NetArmorResult> results = m_postprocessor->postProcessArmorMat(
-        infer_output, m_inference_engine->m_infer_param, my_color);
+        infer_output, m_inference_engine->m_infer_param, my_color,
+        m_inference_engine->deviceOutputPtr());
     if (measure)
         postprocess_us = elapsedMicroseconds(phase_start, PerformanceClock::now());
 
@@ -575,7 +576,8 @@ std::vector<NetRuneResult> YOLOModel::netProcess(const cv::Mat &input_image)
     if (measure)
         phase_start = PerformanceClock::now();
     std::vector<NetRuneResult> results = m_postprocessor->postProcessRuneMat(
-        infer_output, m_inference_engine->m_infer_param);
+        infer_output, m_inference_engine->m_infer_param,
+        m_inference_engine->deviceOutputPtr());
     if (measure)
         postprocess_us = elapsedMicroseconds(phase_start, PerformanceClock::now());
 

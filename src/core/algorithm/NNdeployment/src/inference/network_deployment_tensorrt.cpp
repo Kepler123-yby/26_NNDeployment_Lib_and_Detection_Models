@@ -287,11 +287,21 @@ const float *TensorRTEngine::syncInfer(const cv::Mat &pre_processed_image)
 
     m_context->enqueueV3(m_cuda_stream);
 
+    // 后处理启用 CUDA 时，输出直接留在显存供后处理读取，省掉 D2H 和后续 H2D。
+    if (m_model_config.postprocess_cuda)
+    {
+        cudaStreamSynchronize(m_cuda_stream);
+        m_output_on_device = true;
+        m_input_on_device = false;
+        return nullptr;
+    }
+
     cudaMemcpyAsync(m_rst, m_buffers[m_output_index],
                     m_output_volume, cudaMemcpyDeviceToHost, m_cuda_stream);
 
     cudaStreamSynchronize(m_cuda_stream);
 
+    m_output_on_device = false;
     m_input_on_device = false;
     return m_rst;
 }
@@ -312,13 +322,28 @@ const float *TensorRTEngine::asyncInfer(const cv::Mat &pre_processed_image)
 
     m_context->enqueueV3(m_cuda_stream);
 
+    // 后处理启用 CUDA 时，输出直接留在显存供后处理读取，省掉 D2H 和后续 H2D。
+    if (m_model_config.postprocess_cuda)
+    {
+        cudaStreamSynchronize(m_cuda_stream);
+        m_output_on_device = true;
+        m_input_on_device = false;
+        return nullptr;
+    }
+
     cudaMemcpyAsync(m_rst, m_buffers[m_output_index],
                     m_output_volume, cudaMemcpyDeviceToHost, m_cuda_stream);
 
     cudaStreamSynchronize(m_cuda_stream);
 
+    m_output_on_device = false;
     m_input_on_device = false;
     return m_rst;
+}
+
+const void *TensorRTEngine::deviceOutputPtr() const
+{
+    return m_output_on_device ? m_buffers[m_output_index] : nullptr;
 }
 
 TensorRTEngine::~TensorRTEngine()

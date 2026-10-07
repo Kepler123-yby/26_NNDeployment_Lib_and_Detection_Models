@@ -26,6 +26,10 @@ public:
     virtual const float *asyncInfer(const cv::Mat &pre_processed_image) = 0;
     virtual const float *asyncInfer4(const cv::Mat &pre_processed_image) { throw std::logic_error("async4 infer not supported"); }
 
+    // 若后端推理输出仍留在显存（未拷回主机），返回设备端指针；否则返回 nullptr。
+    // 供后处理直接读取显存，省掉 D2H + H2D 往返。
+    virtual const void *deviceOutputPtr() const { return nullptr; }
+
     InferParam m_infer_param;
 
 protected:

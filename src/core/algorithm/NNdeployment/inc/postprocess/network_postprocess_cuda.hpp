@@ -33,17 +33,21 @@ struct CudaRuneCandidates
 
 // V5 步兵模型解码：输出为 候选 × 特征（25200*22）。
 CudaArmorCandidates cudaDecodeArmorV5(const float *input_ptr, const InferParam &infer_param,
-                                      float confidence_threshold, int my_color);
+                                      float confidence_threshold, int my_color,
+                                      const void *device_input = nullptr);
 
 // V8 / V8_21 步兵模型解码：输出为 特征 × 候选，point_stride 为关键点步长（V8=3，V8_21=2）。
 CudaArmorCandidates cudaDecodeArmorV8(const float *input_ptr, const InferParam &infer_param,
-                                      float confidence_threshold, int my_color, int point_stride);
+                                      float confidence_threshold, int my_color, int point_stride,
+                                      const void *device_input = nullptr);
 
 // 雷达模型解码：输出为 特征 × 候选，使用 xywh 作为 NMS 边界框。
 CudaArmorCandidates cudaDecodeLidar(const float *input_ptr, const InferParam &infer_param,
-                                    float confidence_threshold);
+                                    float confidence_threshold,
+                                    const void *device_input = nullptr);
 
 // 大符模型解码：输出为 特征 × 候选。
 CudaRuneCandidates cudaDecodeRune(const float *input_ptr, const InferParam &infer_param,
-                                  float confidence_threshold);
+                                  float confidence_threshold,
+                                  const void *device_input = nullptr);
 } // namespace MPT
