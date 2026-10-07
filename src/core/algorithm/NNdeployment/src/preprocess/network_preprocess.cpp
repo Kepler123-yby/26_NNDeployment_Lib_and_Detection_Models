@@ -39,6 +39,17 @@ cv::Mat YOLOModel::InferenceEngine::preProcessImage(const cv::Mat &origin_image)
     if (output_buffer.empty())
         output_buffer = cv::Mat(target_height, target_width, CV_8UC3);
 
+    m_infer_param.pad_x = std::max(0, (target_width - new_width) / 2);
+    m_infer_param.pad_y = std::max(0, (target_height - new_height) / 2);
+
+#if NNDEPLOYMENT_WITH_OPENCV_CUDA
+    // 可选：使用 OpenCV CUDA 在 GPU 上完成缩放与 padding，再下载回 host 缓冲区。
+    if (m_model_config.preprocess_cuda &&
+        cudaResizeAndPad(origin_image, target_width, target_height, new_width, new_height,
+                         m_infer_param.pad_x, m_infer_param.pad_y, output_buffer))
+        return output_buffer;
+#endif
+
     // 正常情况下需要确保模型输入的长宽比等于原图长宽比，避免padding。26赛季中所有图片尺寸均为1440*1080，对应的模型输入尺寸为640*480
     if (new_height == target_height && new_width == target_width)
     {
@@ -50,8 +61,6 @@ cv::Mat YOLOModel::InferenceEngine::preProcessImage(const cv::Mat &origin_image)
     cv::Mat resized_view;
     cv::resize(origin_image, resized_view, cv::Size(new_width, new_height), 0, 0, cv::INTER_LINEAR);
 
-    m_infer_param.pad_x = std::max(0, (target_width - new_width) / 2);
-    m_infer_param.pad_y = std::max(0, (target_height - new_height) / 2);
     cv::copyMakeBorder(resized_view,
                        output_buffer,
                        m_infer_param.pad_y,

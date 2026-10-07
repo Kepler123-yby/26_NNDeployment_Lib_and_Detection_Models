@@ -22,7 +22,7 @@ struct RuneDetectionFrame
 class ArmorDetector final
 {
 public:
-    explicit ArmorDetector(const JsonConfig &config,
+    explicit ArmorDetector(const YamlConfig &config,
                            std::size_t pipeline_delay,
                            const DebugConfig &debug = DebugConfig());
 
@@ -40,7 +40,7 @@ private:
 class RuneDetector final
 {
 public:
-    explicit RuneDetector(const JsonConfig &config,
+    explicit RuneDetector(const YamlConfig &config,
                           std::size_t pipeline_delay,
                           const DebugConfig &debug = DebugConfig());
 

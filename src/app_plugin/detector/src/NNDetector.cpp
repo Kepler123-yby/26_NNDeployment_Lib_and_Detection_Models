@@ -15,7 +15,7 @@ cv::Mat takeMatchedFrame(std::deque<cv::Mat> &frames, std::size_t delay)
 }
 } // namespace
 
-ArmorDetector::ArmorDetector(const JsonConfig &config,
+ArmorDetector::ArmorDetector(const YamlConfig &config,
                              std::size_t pipeline_delay,
                              const DebugConfig &debug)
     : m_model(config, debug), m_pipeline_delay(pipeline_delay)
@@ -35,7 +35,7 @@ std::optional<ArmorDetectionFrame> ArmorDetector::process(const cv::Mat &image,
     return ArmorDetectionFrame{std::move(matched), std::move(results)};
 }
 
-RuneDetector::RuneDetector(const JsonConfig &config,
+RuneDetector::RuneDetector(const YamlConfig &config,
                            std::size_t pipeline_delay,
                            const DebugConfig &debug)
     : m_model(config, debug), m_pipeline_delay(pipeline_delay)

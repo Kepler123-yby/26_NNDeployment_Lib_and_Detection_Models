@@ -43,9 +43,11 @@ public:
               const std::string &device = "GPU",
               float confidence_threshold = 0.5f,
               const std::string &postprocess_mode = "auto_detect",
-              const DebugConfig &debug_config = DebugConfig());
-    // 从 JSON 的指定节点读取模型配置。
-    YOLOModel(const JsonConfig &json_config,
+              const DebugConfig &debug_config = DebugConfig(),
+              bool preprocess_cuda = false,
+              bool postprocess_cuda = false);
+    // 从 YAML 的指定节点读取模型配置。
+    YOLOModel(const YamlConfig &yaml_config,
               const DebugConfig &debug_config = DebugConfig());
     YOLOModel() = delete;
     ~YOLOModel() noexcept;
@@ -94,6 +96,10 @@ public:
         NetDeployWay deploy_way;
         std::string device;
         float confidence_threshold = 0.5f;
+        // 是否使用 OpenCV CUDA 加速预处理（缩放与 padding）。
+        bool preprocess_cuda = false;
+        // 是否使用 OpenCV CUDA 加速后处理（候选解码）。
+        bool postprocess_cuda = false;
 
         ModelConfig() = delete;
         ModelConfig(const std::string &path,
@@ -101,15 +107,22 @@ public:
                     const NetDeployWay &deploy_way = NetDeployWay::openvino,
                     const std::string &device = "GPU",
                     float confidence = 0.5f,
-                    const NetPostProcessMode &postprocess_mode = NetPostProcessMode::auto_detect)
+                    const NetPostProcessMode &postprocess_mode = NetPostProcessMode::auto_detect,
+                    bool preprocess_cuda = false,
+                    bool postprocess_cuda = false)
             : model_path(path),
               postprocess_mode(postprocess_mode),
               infer_mode(infer_mode),
               deploy_way(deploy_way),
               device(device),
-              confidence_threshold(confidence)
+              confidence_threshold(confidence),
+              preprocess_cuda(preprocess_cuda),
+              postprocess_cuda(postprocess_cuda)
         {}
     };
+
+    // 是否在构建时启用了 OpenCV CUDA，且当前机器存在可用的 CUDA 设备。
+    static bool cudaAvailable();
 
 private:
     YOLOModel(const ModelConfig &model_config, const DebugConfig &debug_config = DebugConfig());

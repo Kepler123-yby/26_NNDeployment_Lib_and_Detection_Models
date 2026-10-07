@@ -5,13 +5,18 @@
 #include <stdexcept>
 #include <utility>
 
-JsonConfig::JsonConfig(std::string json_path,
+YamlConfig::YamlConfig(std::string yaml_path,
                        std::string model_key,
                        std::string model_folder)
-    : json_path(std::move(json_path)),
+    : yaml_path(std::move(yaml_path)),
       model_key(std::move(model_key)),
       model_folder(std::move(model_folder))
 {}
+
+bool opencvCudaAvailable()
+{
+    return YOLOModel::cudaAvailable();
+}
 
 ArmorModel::ArmorModel(const std::string &model_path)
     : m_model(std::make_unique<YOLOModel>(model_path))
@@ -26,22 +31,26 @@ ArmorModel::ArmorModel(const std::string &model_path,
                        const std::string &device,
                        float confidence_threshold,
                        const std::string &postprocess_mode,
-                       const DebugConfig &debug_config)
+                       const DebugConfig &debug_config,
+                       bool preprocess_cuda,
+                       bool postprocess_cuda)
     : m_model(std::make_unique<YOLOModel>(model_path,
                                          infer_mode,
                                          deploy_way,
                                          device,
                                          confidence_threshold,
                                          postprocess_mode,
-                                         debug_config))
+                                         debug_config,
+                                         preprocess_cuda,
+                                         postprocess_cuda))
 {
     if (!m_model->supportsArmor())
         throw std::invalid_argument("模型后处理类型不是装甲板，无法构造 ArmorModel");
 }
 
-ArmorModel::ArmorModel(const JsonConfig &json_config,
+ArmorModel::ArmorModel(const YamlConfig &yaml_config,
                        const DebugConfig &debug_config)
-    : m_model(std::make_unique<YOLOModel>(json_config, debug_config))
+    : m_model(std::make_unique<YOLOModel>(yaml_config, debug_config))
 {
     if (!m_model->supportsArmor())
         throw std::invalid_argument("模型后处理类型不是装甲板，无法构造 ArmorModel");
@@ -71,22 +80,26 @@ RuneModel::RuneModel(const std::string &model_path,
                      const std::string &device,
                      float confidence_threshold,
                      const std::string &postprocess_mode,
-                     const DebugConfig &debug_config)
+                     const DebugConfig &debug_config,
+                     bool preprocess_cuda,
+                     bool postprocess_cuda)
     : m_model(std::make_unique<YOLOModel>(model_path,
                                          infer_mode,
                                          deploy_way,
                                          device,
                                          confidence_threshold,
                                          postprocess_mode,
-                                         debug_config))
+                                         debug_config,
+                                         preprocess_cuda,
+                                         postprocess_cuda))
 {
     if (!m_model->supportsRune())
         throw std::invalid_argument("模型后处理类型不是神符，无法构造 RuneModel");
 }
 
-RuneModel::RuneModel(const JsonConfig &json_config,
+RuneModel::RuneModel(const YamlConfig &yaml_config,
                      const DebugConfig &debug_config)
-    : m_model(std::make_unique<YOLOModel>(json_config, debug_config))
+    : m_model(std::make_unique<YOLOModel>(yaml_config, debug_config))
 {
     if (!m_model->supportsRune())
         throw std::invalid_argument("模型后处理类型不是神符，无法构造 RuneModel");

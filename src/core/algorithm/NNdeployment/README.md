@@ -41,21 +41,21 @@ RuneModel rune_model(
 
 ## 配置文件构造
 
-JSON 构造使用公开的 `JsonConfig`，三个字段依次为 JSON 文件路径、配置节点名和模型仓库根目录。节点里的 `xml` 字段带后端子目录（如 `openvino/xxx.xml`、`onnx/xxx.onnx`、`tensorrt/xxx.engine`），内部将其与 `model_folder` 拼接为完整路径。为兼容旧写法（`model_folder` 传某个后端子目录、`xml` 只写文件名），当直接拼接不存在时会依次回退到“模型文件夹的父目录”以及“在其父目录下按文件名递归查找”：
+YAML 构造使用公开的 `YamlConfig`，三个字段依次为 YAML 文件路径、配置节点名和模型仓库根目录。节点里的 `xml` 字段带后端子目录（如 `openvino/xxx.xml`、`onnx/xxx.onnx`、`tensorrt/xxx.engine`），内部将其与 `model_folder` 拼接为完整路径。为兼容旧写法（`model_folder` 传某个后端子目录、`xml` 只写文件名），当直接拼接不存在时会依次回退到“模型文件夹的父目录”以及“在其父目录下按文件名递归查找”：
 
 ```cpp
-ArmorModel armor_model(JsonConfig{
-    "config/detect.json",
+ArmorModel armor_model(YamlConfig{
+    "config/detect_openvino.yaml",
     "armor_detect_aim",
     "config/openvino"});
 
-RuneModel rune_model(JsonConfig{
-    "config/detect.json",
+RuneModel rune_model(YamlConfig{
+    "config/detect_openvino.yaml",
     "rune_detect",
     "config/openvino"});
 ```
 
-JSON 构造和直接传参构造是两个独立入口，不再根据字符串后缀自动判断参数用途。
+YAML 构造和直接传参构造是两个独立入口，不再根据字符串后缀自动判断参数用途。
 
 ## 获取结果
 
@@ -93,3 +93,31 @@ MPT::runOfficialBenchmark("armor_model.xml", "GPU", "async");
 ```
 
 使用该接口的目标需单独链接 `NNdeployment_mpt_lib`。
+
+## OpenCV CUDA 加速（可选）
+
+CMake 会自动检测可用的后端并全部编译进同一个 `NNdeployment_lib`，运行时通过 YAML 的 `deploy_way` 选择 OpenVINO / TensorRT。将 `OpenCV_DIR` 指向带 CUDA 的 OpenCV 即会自动编译 CUDA 版本的预处理/后处理：
+
+- 预处理：使用 `cv::cuda::resize` / `cv::cuda::copyMakeBorder` 在 GPU 上完成缩放与 padding；
+- 后处理：使用自定义 CUDA kernel 并行解码候选框，NMS 与结果组装仍在 CPU 完成，保持与 CPU 路径一致的语义。
+
+是否启用由 `ModelConfig` 的 `preprocess_cuda` / `postprocess_cuda` 控制：YAML 构造读取节点中的 `preprocess_cuda` / `postprocess_cuda`（也可用 `cuda` 一键开关），默认 CPU；直接传参构造在末尾追加这两个布尔值：
+
+```cpp
+ArmorModel armor_model(
+    "armor_model.xml", "async", "openvino", "GPU", 0.5f, "v8infantry_21",
+    DebugConfig(), /*preprocess_cuda=*/true, /*postprocess_cuda=*/true);
+```
+
+在未以该选项构建或当前没有可用 CUDA 设备时，库会打印提示并自动回退到 CPU。
+
+YAML 构造还支持在运行时覆盖：`YamlConfig` 的 `preprocess_cuda` / `postprocess_cuda` 为 `std::optional<bool>`，设置后优先于配置文件；`opencvCudaAvailable()` 返回当前构建/设备是否支持 CUDA。
+
+```cpp
+YamlConfig config{"config/detect_openvino.yaml", "armor_v8", "所有模型"};
+config.preprocess_cuda = true;   // 覆盖 YAML 中的取值
+config.postprocess_cuda = false;
+ArmorModel armor_model(config, DebugConfig());
+```
+
+> 注意：当前实现仍需要 host↔device 往返，端到端帧率不会提升（实测 TensorRT 后端略降）。该开关默认关闭，仅作为可选能力保留；真正的提速需要零拷贝改造。

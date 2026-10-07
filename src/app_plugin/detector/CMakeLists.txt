@@ -40,6 +40,16 @@ target_link_libraries(main_test_speed PRIVATE
     opencv_videoio
 )
 
+add_executable(detector_speed_bench tests/detector_speed_bench.cpp)
+target_compile_definitions(detector_speed_bench PRIVATE
+    NNDEPLOYMENT_PROJECT_ROOT="${PROJECT_SOURCE_DIR}"
+)
+target_link_libraries(detector_speed_bench PRIVATE
+    ${lib_name}_lib
+    opencv_core
+    opencv_videoio
+)
+
 if(BUILD_TESTING)
     add_executable(detector_smoke_test tests/detector_smoke_test.cpp)
     target_compile_definitions(detector_smoke_test PRIVATE
@@ -52,4 +62,22 @@ if(BUILD_TESTING)
     )
     add_test(NAME detector_smoke COMMAND detector_smoke_test)
     set_tests_properties(detector_smoke PROPERTIES TIMEOUT 180)
+endif()
+
+# OpenCV CUDA 后处理的 CPU/CUDA 一致性测试。
+# 测试使用 OpenVINO 模型，仅在库中实际编译了 OpenCV CUDA + OpenVINO 时构建与注册。
+if(NNDEPLOYMENT_WITH_OPENCV_CUDA AND NNDEPLOYMENT_WITH_OPENVINO)
+    add_executable(cuda_parity_test tests/cuda_parity_test.cpp)
+    target_compile_definitions(cuda_parity_test PRIVATE
+        NNDEPLOYMENT_PROJECT_ROOT="${PROJECT_SOURCE_DIR}"
+    )
+    target_link_libraries(cuda_parity_test PRIVATE
+        ${lib_name}_lib
+        opencv_core
+        opencv_videoio
+    )
+    if(BUILD_TESTING)
+        add_test(NAME cuda_parity COMMAND cuda_parity_test)
+        set_tests_properties(cuda_parity PROPERTIES TIMEOUT 300)
+    endif()
 endif()

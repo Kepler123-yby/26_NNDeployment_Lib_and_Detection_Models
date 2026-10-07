@@ -11,6 +11,10 @@
 #define NNDEPLOYMENT_WITH_OPENVINO 1
 #endif
 
+#ifndef NNDEPLOYMENT_WITH_OPENCV_CUDA
+#define NNDEPLOYMENT_WITH_OPENCV_CUDA 0
+#endif
+
 #if NNDEPLOYMENT_WITH_OPENVINO
 #include "network_deployment_openvino.hpp"
 #endif
@@ -19,7 +23,11 @@
 #include "network_deployment_tensorrt.hpp"
 #endif
 
-#include <opencv2/core/persistence.hpp>
+#if NNDEPLOYMENT_WITH_OPENCV_CUDA
+#include <opencv2/core/cuda.hpp>
+#endif
+
+#include <yaml-cpp/yaml.h>
 
 #include <algorithm>
 #include <chrono>
@@ -162,21 +170,17 @@ void printCurrentModelInfo(const ModelConfig &model_config)
     std::cout << "兵种：" << toString(model_config.postprocess_mode) << " "
               << "推理模式：" << toString(model_config.infer_mode) << " "
               << "部署方式：" << toString(model_config.deploy_way) << std::endl;
+    std::cout << "预处理：" << (model_config.preprocess_cuda ? "CUDA" : "CPU")
+              << " 后处理：" << (model_config.postprocess_cuda ? "CUDA" : "CPU") << std::endl;
 
     switch (model_config.postprocess_mode)
     {
     case NetPostProcessMode::auto_detect:
         break;
     case NetPostProcessMode::v5infantry_fourpoints:
-        if ((model_config.infer_mode != NetInferMode::async && model_config.infer_mode != NetInferMode::async4) ||
-            model_config.deploy_way != NetDeployWay::openvino)
-            std::cout << "注：标准情况下v5步兵应该使用" << toString(NetDeployWay::openvino) << "部署，" << toString(NetInferMode::async) << "推理" << std::endl;
         break;
     case NetPostProcessMode::v8infantry_fourpoints:
     case NetPostProcessMode::v8infantry_fourpoints_21:
-        if ((model_config.infer_mode != NetInferMode::async && model_config.infer_mode != NetInferMode::async4) ||
-            model_config.deploy_way != NetDeployWay::openvino)
-            std::cout << "注：标准情况下v8步兵应该使用" << toString(NetDeployWay::openvino) << "部署，" << toString(NetInferMode::async) << "推理" << std::endl;
         break;
     case NetPostProcessMode::lidar_fourpoints:
         if (model_config.infer_mode != NetInferMode::sync || model_config.deploy_way != NetDeployWay::tensorrt)
@@ -237,42 +241,74 @@ std::string resolveModelPath(const std::string &model_folder, const std::string 
     return (folder / name_path).lexically_normal().string();
 }
 
-// 从 JSON 的指定节点读取内部模型配置。
-ModelConfig loadModelConfigFromJson(const JsonConfig &json_config)
+// 读取 YAML 节点的可选字段，缺省时返回 fallback。
+template <typename T>
+T yamlValueOr(const YAML::Node &node, const char *key, const T &fallback)
 {
-    cv::FileStorage config(json_config.json_path, cv::FileStorage::READ);
-    if (!config.isOpened())
-        throw std::runtime_error("无法打开模型配置文件: " + json_config.json_path);
+    return node[key] ? node[key].as<T>() : fallback;
+}
 
-    const cv::FileNode node = config[json_config.model_key];
-    if (node.empty())
-        throw std::runtime_error("模型配置中不存在键: " + json_config.model_key);
+// 从 YAML 的指定节点读取内部模型配置。
+ModelConfig loadModelConfigFromYaml(const YamlConfig &yaml_config)
+{
+    YAML::Node root;
+    try
+    {
+        root = YAML::LoadFile(yaml_config.yaml_path);
+    }
+    catch (const YAML::Exception &error)
+    {
+        throw std::runtime_error("无法打开模型配置文件: " + yaml_config.yaml_path + " (" + error.what() + ")");
+    }
 
-    if (json_config.model_folder.empty())
-        throw std::runtime_error("传入的模型文件夹路径为空: " + json_config.model_key);
+    const YAML::Node node = root[yaml_config.model_key];
+    if (!node)
+        throw std::runtime_error("模型配置中不存在键: " + yaml_config.model_key);
 
-    const std::string xml_name = static_cast<std::string>(node["xml"]);
+    if (yaml_config.model_folder.empty())
+        throw std::runtime_error("传入的模型文件夹路径为空: " + yaml_config.model_key);
+
+    if (!node["xml"])
+        throw std::runtime_error("模型配置缺少xml文件名: " + yaml_config.model_key);
+    const std::string xml_name = node["xml"].as<std::string>();
     if (xml_name.empty())
-        throw std::runtime_error("模型配置缺少xml文件名: " + json_config.model_key);
+        throw std::runtime_error("模型配置缺少xml文件名: " + yaml_config.model_key);
 
     const std::string model_path =
-        resolveModelPath(json_config.model_folder, xml_name);
+        resolveModelPath(yaml_config.model_folder, xml_name);
 
-    const NetInferMode infer_mode = parseInferMode(static_cast<std::string>(node["infer_mode"]));
-    const NetDeployWay deploy_way = parseDeployWay(static_cast<std::string>(node["deploy_way"]));
-    const NetPostProcessMode postprocess_mode = parsePostProcessMode(static_cast<std::string>(node["postprocess_mode"]));
+    const NetInferMode infer_mode = parseInferMode(yamlValueOr<std::string>(node, "infer_mode", ""));
+    const NetDeployWay deploy_way = parseDeployWay(yamlValueOr<std::string>(node, "deploy_way", ""));
+    const NetPostProcessMode postprocess_mode = parsePostProcessMode(yamlValueOr<std::string>(node, "postprocess_mode", ""));
 
-    std::string device = static_cast<std::string>(node["device"]);
+    std::string device = yamlValueOr<std::string>(node, "device", "");
     if (device.empty())
         device = "GPU";
 
     float confidence_threshold = 0.5f;
-    if (!node["score_threshold"].empty())
-        confidence_threshold = static_cast<float>(node["score_threshold"]);
-    else if (!node["config_thresh"].empty())                // 兼容旧版本json配置文件
-        confidence_threshold = static_cast<float>(node["config_thresh"]);
+    if (node["score_threshold"])
+        confidence_threshold = node["score_threshold"].as<float>();
+    else if (node["config_thresh"])                        // 兼容旧版本配置文件
+        confidence_threshold = node["config_thresh"].as<float>();
 
-    return ModelConfig(model_path, infer_mode, deploy_way, device, confidence_threshold, postprocess_mode);
+    // 可选：OpenCV CUDA 加速开关。未填写时保持 CPU。
+    // 支持 preprocess_cuda / postprocess_cuda 单独开关，也支持 cuda 一键开关。
+    const bool cuda_all = node["cuda"] && node["cuda"].as<bool>();
+    bool preprocess_cuda = cuda_all;
+    bool postprocess_cuda = cuda_all;
+    if (node["preprocess_cuda"])
+        preprocess_cuda = node["preprocess_cuda"].as<bool>();
+    if (node["postprocess_cuda"])
+        postprocess_cuda = node["postprocess_cuda"].as<bool>();
+
+    // YamlConfig 中的覆盖值优先于配置文件（供调用方在运行时管理 CUDA）。
+    if (yaml_config.preprocess_cuda.has_value())
+        preprocess_cuda = *yaml_config.preprocess_cuda;
+    if (yaml_config.postprocess_cuda.has_value())
+        postprocess_cuda = *yaml_config.postprocess_cuda;
+
+    return ModelConfig(model_path, infer_mode, deploy_way, device, confidence_threshold,
+                       postprocess_mode, preprocess_cuda, postprocess_cuda);
 }
 } // namespace
 
@@ -290,6 +326,22 @@ const float *YOLOModel::InferenceEngine::infer(const cv::Mat &pre_processed_imag
         return asyncInfer4(pre_processed_image);
     }
     throw std::runtime_error("不支持的推理模式");
+}
+
+bool YOLOModel::cudaAvailable()
+{
+#if NNDEPLOYMENT_WITH_OPENCV_CUDA
+    try
+    {
+        return cv::cuda::getCudaEnabledDeviceCount() > 0;
+    }
+    catch (const std::exception &)
+    {
+        return false;
+    }
+#else
+    return false;
+#endif
 }
 
 float YOLOModel::defaultNmsThreshold(NetPostProcessMode mode)
@@ -324,19 +376,23 @@ YOLOModel::YOLOModel(const std::string &model_path,
                      const std::string &device,
                      float confidence_threshold,
                      const std::string &postprocess_mode,
-                     const DebugConfig &debug_config)
+                     const DebugConfig &debug_config,
+                     bool preprocess_cuda,
+                     bool postprocess_cuda)
     : YOLOModel(ModelConfig(model_path,
                             parseInferMode(infer_mode),
                             parseDeployWay(deploy_way),
                             device,
                             confidence_threshold,
-                            parsePostProcessMode(postprocess_mode)),
+                            parsePostProcessMode(postprocess_mode),
+                            preprocess_cuda,
+                            postprocess_cuda),
                 debug_config)
 {}
 
-YOLOModel::YOLOModel(const JsonConfig &json_config,
+YOLOModel::YOLOModel(const YamlConfig &yaml_config,
                      const DebugConfig &debug_config)
-    : YOLOModel(loadModelConfigFromJson(json_config), debug_config)
+    : YOLOModel(loadModelConfigFromYaml(yaml_config), debug_config)
 {}
 
 YOLOModel::~YOLOModel() noexcept = default;
@@ -345,6 +401,17 @@ YOLOModel::YOLOModel(const ModelConfig &model_config, const DebugConfig &debug_c
 {
     if (m_debug_config.calculate_speed_info)
         m_speed_stats = std::make_unique<MPT::SpeedStats>();
+
+    // 配置请求了 OpenCV CUDA 但在当前构建/设备上不可用时，回退到 CPU 并给出提示。
+    if (m_model_config.preprocess_cuda || m_model_config.postprocess_cuda)
+    {
+        if (!cudaAvailable())
+        {
+            std::cout << "注：配置请求了 OpenCV CUDA 加速，但当前构建或设备不支持，已回退到 CPU。" << std::endl;
+            m_model_config.preprocess_cuda = false;
+            m_model_config.postprocess_cuda = false;
+        }
+    }
 
     // 根据部署方式选择openvino/tensorrt，目前仅雷达会使用tensorrt
     switch (m_model_config.deploy_way)

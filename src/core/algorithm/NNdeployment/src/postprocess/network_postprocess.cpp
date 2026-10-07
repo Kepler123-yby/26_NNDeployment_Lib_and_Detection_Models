@@ -11,6 +11,14 @@
 #include <sstream>
 #include <utility>
 
+#ifndef NNDEPLOYMENT_WITH_OPENCV_CUDA
+#define NNDEPLOYMENT_WITH_OPENCV_CUDA 0
+#endif
+
+#if NNDEPLOYMENT_WITH_OPENCV_CUDA
+#include "network_postprocess_cuda.hpp"
+#endif
+
 // ==================== 后处理模块 ====================
 // 后处理模块：v5 armor、v8 armor、lidar 和 rune 四类结果解析。
 
@@ -141,6 +149,21 @@ std::vector<NetArmorResult> V5InfantryPostProcessor::postProcessArmorMat(const f
     const double raw_confidence_threshold = std::log(static_cast<double>(confidence_threshold) / (1.0 - static_cast<double>(confidence_threshold)));
     const float score_threshold = confidence_threshold;
 
+#if NNDEPLOYMENT_WITH_OPENCV_CUDA
+    // 可选：使用 OpenCV CUDA 在 GPU 上完成候选解码。
+    if (m_model_config.postprocess_cuda)
+    {
+        MPT::CudaArmorCandidates decoded =
+            MPT::cudaDecodeArmorV5(input_ptr, infer_param, confidence_threshold, my_color);
+        class_ids_temp = std::move(decoded.class_ids);
+        confidences_temp = std::move(decoded.confidences);
+        sizes_temp = std::move(decoded.sizes);
+        colors_temp = std::move(decoded.colors);
+        keypoints_temp = std::move(decoded.keypoints);
+        boxes_temp = std::move(decoded.boxes);
+    }
+    else
+#endif
     // V5 输出为 25200*22，每行是一组候选结果。
     for (int candidate_index = 0; candidate_index < infer_param.out_tensor_rows; ++candidate_index)
     {
@@ -307,6 +330,21 @@ std::vector<NetArmorResult> V8_21InfantryPostProcessor::postProcessArmorMat(cons
 
     const float score_threshold = confidence_threshold;
 
+#if NNDEPLOYMENT_WITH_OPENCV_CUDA
+    // 可选：使用 OpenCV CUDA 在 GPU 上完成候选解码。
+    if (m_model_config.postprocess_cuda)
+    {
+        MPT::CudaArmorCandidates decoded =
+            MPT::cudaDecodeArmorV8(input_ptr, infer_param, confidence_threshold, my_color, 2);
+        class_ids_temp = std::move(decoded.class_ids);
+        confidences_temp = std::move(decoded.confidences);
+        sizes_temp = std::move(decoded.sizes);
+        colors_temp = std::move(decoded.colors);
+        keypoints_temp = std::move(decoded.keypoints);
+        boxes_temp = std::move(decoded.boxes);
+    }
+    else
+#endif
     // V8 21维输出为 21*6300，每列是一组候选结果。
     for (int candidate_index = 0; candidate_index < infer_param.out_tensor_cols; ++candidate_index)
     {
@@ -451,6 +489,21 @@ std::vector<NetArmorResult> V8InfantryPostProcessor::postProcessArmorMat(const f
     std::vector<NetArmorResult> results;     // 完整的装甲板检测结果
     const float score_threshold = confidence_threshold;
 
+#if NNDEPLOYMENT_WITH_OPENCV_CUDA
+    // 可选：使用 OpenCV CUDA 在 GPU 上完成候选解码。
+    if (m_model_config.postprocess_cuda)
+    {
+        MPT::CudaArmorCandidates decoded =
+            MPT::cudaDecodeArmorV8(input_ptr, infer_param, confidence_threshold, my_color, 3);
+        class_ids_temp = std::move(decoded.class_ids);
+        confidences_temp = std::move(decoded.confidences);
+        sizes_temp = std::move(decoded.sizes);
+        colors_temp = std::move(decoded.colors);
+        keypoints_temp = std::move(decoded.keypoints);
+        boxes_temp = std::move(decoded.boxes);
+    }
+    else
+#endif
     // V8 25维输出为 25*6300，每列是一组候选结果。
     for (int candidate_index = 0; candidate_index < infer_param.out_tensor_cols; ++candidate_index)
     {
@@ -600,6 +653,19 @@ std::vector<NetArmorResult> LidarPostProcessor::postProcessArmorMat(const float 
     std::vector<cv::Point2d> keypoints_temp; // 装甲板四个关键点坐标
     std::vector<NetArmorResult> results;     // 完整的装甲板检测结果
 
+#if NNDEPLOYMENT_WITH_OPENCV_CUDA
+    // 可选：使用 OpenCV CUDA 在 GPU 上完成候选解码。
+    if (m_model_config.postprocess_cuda)
+    {
+        MPT::CudaArmorCandidates decoded =
+            MPT::cudaDecodeLidar(input_ptr, infer_param, confidence_threshold);
+        class_ids_temp = std::move(decoded.class_ids);
+        confidences_temp = std::move(decoded.confidences);
+        keypoints_temp = std::move(decoded.keypoints);
+        rects_temp = std::move(decoded.boxes);
+    }
+    else
+#endif
     // 雷达网络输出形状为 26*2100，每列是一个预测结果
     for (int current_anchor_box = 0; current_anchor_box < infer_param.out_tensor_cols; current_anchor_box++)
     {
@@ -857,6 +923,18 @@ std::vector<NetRuneResult> RunePostProcessor::postProcessRuneMat(const float *in
     std::vector<int> indices_temp;           // NMS后保留的结果索引
     std::vector<NetRuneResult> results;      // 完整的符叶检测结果
 
+#if NNDEPLOYMENT_WITH_OPENCV_CUDA
+    // 可选：使用 OpenCV CUDA 在 GPU 上完成候选解码。
+    if (m_model_config.postprocess_cuda)
+    {
+        MPT::CudaRuneCandidates decoded =
+            MPT::cudaDecodeRune(input_ptr, infer_param, confidence_threshold);
+        class_ids_temp = std::move(decoded.class_ids);
+        confidences_temp = std::move(decoded.confidences);
+        keypoints_temp = std::move(decoded.keypoints);
+    }
+    else
+#endif
     // 打符网络形状是 18*6300，每列是一个预测结果
     for (int candidate_index = 0; candidate_index < infer_param.out_tensor_cols; ++candidate_index)
     {

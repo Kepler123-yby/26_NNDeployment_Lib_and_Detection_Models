@@ -7,7 +7,7 @@
 
 `NNdeployment` 是面向 RoboMaster 视觉任务的 C++ 网络部署库。项目以统一接口封装模型预处理、推理与后处理，当前支持 V5/V8 装甲板四关键点、雷达四关键点和能量机关五关键点结果解析，可在构建时选择 OpenVINO 或 TensorRT 推理后端。
 
-仓库提供模型、测试视频、JSON 配置、三模型综合演示和性能测试程序，可在没有相机、串口和下位机的环境中完成离线复现。默认示例使用 OpenVINO，并将 V5 装甲板、V8 装甲板和能量机关的可视化结果分别写入视频文件，适合桌面环境、SSH 和容器运行。
+仓库提供模型、测试视频、YAML 配置、三模型综合演示和性能测试程序，可在没有相机、串口和下位机的环境中完成离线复现。默认示例使用 OpenVINO，并将 V5 装甲板、V8 装甲板和能量机关的可视化结果分别写入视频文件，适合桌面环境、SSH 和容器运行。
 
 
 
@@ -42,9 +42,10 @@
 
 硬件与运行环境说明：
 
-- OpenVINO 可运行于受支持的 CPU 或 Intel GPU；仓库 JSON 默认选择 `GPU`。
-- 仅有 CPU 的设备可把对应 JSON 节点的 `device` 改为 `CPU`。
+- OpenVINO 可运行于受支持的 CPU 或 Intel GPU；仓库 YAML 默认选择 `GPU`。
+- 仅有 CPU 的设备可把对应 YAML 节点的 `device` 改为 `CPU`。
 - TensorRT 后端要求 NVIDIA GPU、兼容驱动、CUDA Toolkit 与 TensorRT。
+- 可选的 OpenCV CUDA 预处理/后处理要求 OpenCV 带 CUDA 模块（至少 `cudaarithm`、`cudaimgproc`、`cudawarping`），构建步骤见 1.2 的「OpenCV（可选：启用 CUDA 模块）」；该能力默认关闭，由 YAML 的 `preprocess_cuda` / `postprocess_cuda` 控制。
 - 运行随仓示例不需要工业相机、串口、下位机或云台。
 - TensorRT 序列化引擎通常与 GPU 架构、CUDA 和 TensorRT 版本绑定；后端已集成 ONNX Parser，可直接加载 `.onnx` 现场构建 engine 并缓存为同名 `.engine`，环境变化后删除缓存即可重建。
 
@@ -91,6 +92,99 @@ pkg-config --modversion opencv4
 
 更多编译选项见 [OpenCV 官方 Linux 安装文档](https://docs.opencv.org/4.x/d7/d9f/tutorial_linux_install.html)。
 
+#### OpenCV（可选：启用 CUDA 模块）
+
+Ubuntu APT 的 `libopencv-dev` 不带 CUDA。若要在 NVIDIA GPU 上运行项目的 CUDA 预处理/后处理（见 [1.5](#15-opencv-cuda-加速可选)），需要从源码编译一个至少包含 `core`、`imgproc`、`dnn`、`cudaarithm`、`cudaimgproc`、`cudawarping` 的 OpenCV。
+
+**1) 前置依赖**
+
+```bash
+# CUDA Toolkit：版本需与驱动匹配，且 nvcc 可用
+nvcc --version
+
+# 视频编解码与图像格式（与上一小节相同）
+sudo apt install -y \
+  libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libavdevice-dev \
+  libjpeg-dev libpng-dev libtiff-dev
+```
+
+**2) 准备 cuDNN**（OpenCV DNN 的 CUDA 后端需要，OpenCV 4.13 支持 cuDNN 9）
+
+```bash
+# 方式 A：有 NVIDIA 账号，从官网下载对应 CUDA 版本的 cuDNN tar 包解压即可
+
+# 方式 B：无账号，用 PyPI 的 nvidia-cudnn-cu11（wheel 自带头文件与库）
+mkdir -p ~/opt/cudnn-dl && cd ~/opt/cudnn-dl
+python3 -m pip download --no-deps nvidia-cudnn-cu11 -d .
+
+mkdir -p ~/opt/cudnn && cd ~/opt/cudnn
+python3 -m zipfile -e ~/opt/cudnn-dl/nvidia_cudnn_cu11-*.whl .
+cd nvidia/cudnn/lib && ln -sf libcudnn.so.* libcudnn.so && cd -
+# 结果：~/opt/cudnn/nvidia/cudnn/{include,lib}
+```
+
+> `nvidia-cudnn-cu11` 对应 CUDA 11，CUDA 12 请改用 `nvidia-cudnn-cu12`。
+> 下载不稳定时可用国内镜像或断点续传，例如：
+> `python3 -m pip download --no-deps -i https://mirrors.aliyun.com/pypi/simple/ nvidia-cudnn-cu11 -d .`
+
+**3) 配置、编译与安装**（建议装到独立前缀，避免覆盖系统 CPU 版 OpenCV）
+
+```bash
+git clone --depth 1 --branch 4.x https://github.com/opencv/opencv.git
+git clone --depth 1 --branch 4.x https://github.com/opencv/opencv_contrib.git
+
+cmake -S opencv -B opencv-build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX="$HOME/opt/opencv-cuda" \
+  -DOPENCV_EXTRA_MODULES_PATH="$PWD/opencv_contrib/modules" \
+  -DWITH_CUDA=ON \
+  -DCUDA_ARCH_BIN=8.6 \
+  -DCUDA_ARCH_PTX= \
+  -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda \
+  -DWITH_CUDNN=ON \
+  -DOPENCV_DNN_CUDA=ON \
+  -DCUDNN_INCLUDE_DIR="$HOME/opt/cudnn/nvidia/cudnn/include" \
+  -DCUDNN_LIBRARY="$HOME/opt/cudnn/nvidia/cudnn/lib/libcudnn.so" \
+  -DWITH_NVCUVID=OFF \
+  -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF \
+  -DBUILD_JAVA=OFF -DBUILD_DOCS=OFF \
+  -DBUILD_opencv_python3=ON \
+  -DOPENCV_GENERATE_PKGCONFIG=ON
+
+cmake --build opencv-build -j"$(nproc)"
+cmake --install opencv-build
+```
+
+- `CUDA_ARCH_BIN` 按显卡算力填写：30 系（如 RTX 3060 Ti）为 `8.6`，40 系为 `8.9`，不确定可用 `nvidia-smi` 查型号后对照算力表。
+- 只构建本项目所需模块可加 `-DBUILD_LIST=core,imgproc,dnn,videoio,cudaarithm,cudaimgproc,cudawarping` 以缩短编译时间；去掉则构建完整 OpenCV。
+- `cudacodec` 需要额外的 NVIDIA Video Codec SDK，一般不编译（`-DWITH_NVCUVID=OFF` 时会自动跳过）。
+- contrib 模块若因系统 `libabsl`/`ceres` 链接失败，可加 `-DBUILD_opencv_sfm=OFF` 关闭对应模块。
+
+**4) 验证**
+
+```bash
+"$HOME/opt/opencv-cuda/bin/opencv_version" --verbose | grep -E 'NVIDIA CUDA|cuDNN'
+# NVIDIA CUDA:   YES (ver 11.8, CUFFT CUBLAS)
+# cuDNN:         YES (ver 9.10.2)
+```
+
+**5) 在本项目中启用**
+
+```bash
+cmake -S . -B build \
+  -DOpenCV_DIR="$HOME/opt/opencv-cuda/lib/cmake/opencv4" \
+  -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+# 配置阶段应打印：NNdeployment: 启用 OpenCV CUDA 预处理/后处理
+```
+
+> 使用独立前缀安装时，运行时需要让动态链接器找到它：
+> ```bash
+> export LD_LIBRARY_PATH="$HOME/opt/opencv-cuda/lib:$LD_LIBRARY_PATH"
+> ```
+> 若把带 CUDA 的 OpenCV 直接装到 `/usr/local`，会覆盖系统已有的 CPU 版，并可能影响其他项目；
+> 同时存在两份同名版本（`.so.413`）时，同一进程不要混链。
+
 #### OpenVINO 2025.4.1（Ubuntu APT）
 
 推荐按照 [OpenVINO 官方安装向导（Linux / APT / 2025.4.1）](https://docs.openvino.ai/2026/get-started/install-openvino.html?PACKAGE=OPENVINO_BASE&VERSION=v_2025_4_1&OP_SYSTEM=LINUX&DISTRIBUTION=APT) 配置 Intel APT 源并安装 C/C++ Runtime，此处仅以个人构建仓库时的命令举例：
@@ -127,31 +221,74 @@ command -v benchmark_app
 
 Benchmark Tool 的参数说明见 [OpenVINO Benchmark Tool 文档](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/benchmark-tool.html)。
 
-### 1.3 构建 OpenVINO 版本
+### 1.3 构建（自动检测后端）
 
-推荐使用 VS Code 的 CMake Tools 插件配置并构建工程，随后直接选择综合演示 `main`、性能测试 `main_test_speed` 或自动测试 `detector_smoke_test`。也可以在仓库根目录执行：
+CMake 会直接查找并检测可用的推理后端，把找到的后端**全部编译进同一个 `NNdeployment_lib`**：
+
+- **OpenVINO**：`find_package(OpenVINO)`（可通过 `OPENVINO_DIR` 或环境变量指定路径）；
+- **TensorRT**：优先 `find_package(TensorRT)`，找不到时按 `TENSORRT_ROOT` 与常见安装路径用 `find_path`/`find_library` 直接查找；
+- **OpenCV CUDA**：当 `OpenCV_DIR` 指向带 CUDA 模块的 OpenCV 时，自动启用预处理/后处理加速。
+
+因此通常一条命令即可：
 
 ```bash
-cmake -S . -B build \
-  -DNNDEPLOYMENT_ENABLE_TENSORRT=OFF \
-  -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
-生成的共享库位于 `build/lib`，可执行文件位于 `build/bin`。
+运行时由 YAML 配置的 `deploy_way`（`openvino`/`tensorrt`）与 `preprocess_cuda`/`postprocess_cuda` 选择具体后端与是否走 CUDA，**切换后端或 CUDA 无需重新编译**。
 
-### 1.4 构建 TensorRT 版本（可选）
+需要覆盖依赖路径时：
 
 ```bash
-cmake -S . -B build-trt \
-  -DNNDEPLOYMENT_ENABLE_TENSORRT=ON \
-  -DCMAKE_BUILD_TYPE=Release
-cmake --build build-trt -j
+cmake -S . -B build \
+  -DOpenCV_DIR=/path/to/opencv-with-cuda \
+  -DOPENVINO_DIR=/opt/intel/openvino_2024/runtime/cmake \
+  -DTENSORRT_ROOT=/usr/local/tensorrt
 ```
 
-该选项会以 TensorRT 替代 OpenVINO 构建 `NNdeployment_lib`，并非在同一库中同时启用两个后端。后端按模型扩展名自动选择：`.onnx` 走内置 ONNX Parser 现场构建 engine（并缓存为同名 `.engine`），其它扩展名按序列化 engine 反序列化；`detect.json` 中对应节点的 `deploy_way` 设为 `tensorrt`，`xml` 可写 `onnx/xxx.onnx` 或 `tensorrt/xxx.engine`。
+找不到的后端会自动跳过（配置阶段会打印汇总）；若一个后端都没有则直接报错。如需显式关闭某后端，可用 `-DNNDEPLOYMENT_ENABLE_OPENVINO=OFF` / `-DNNDEPLOYMENT_ENABLE_TENSORRT=OFF` / `-DNNDEPLOYMENT_ENABLE_OPENCV_CUDA=OFF`。生成的共享库位于 `build/lib`，可执行文件位于 `build/bin`。
 
-### 1.5 快速运行
+### 1.4 通过配置切换后端
+
+同一次构建通常同时包含 OpenVINO 与 TensorRT，使用哪一个是**运行时**由 YAML 决定的：
+
+- [`detect_openvino.yaml`](src/app_plugin/detector/config/detect_openvino.yaml)：`deploy_way=openvino`，模型为 `openvino/xxx.xml`；
+- [`detect_tensorrt.yaml`](src/app_plugin/detector/config/detect_tensorrt.yaml)：`deploy_way=tensorrt`，模型为 `onnx/xxx.onnx`（内置 ONNX Parser 现场构建 engine，并缓存为同名 `.engine`）。
+
+```bash
+./build/bin/main --config=detect_openvino.yaml
+./build/bin/main --config=detect_tensorrt.yaml
+```
+
+### 1.5 OpenCV CUDA 加速（可选）
+
+预处理（缩放与 padding）与后处理（候选解码）可选择使用 OpenCV CUDA 在 GPU 上执行。该功能需要一个带 CUDA 模块的 OpenCV（至少包含 `core`、`imgproc`、`dnn`、`cudaarithm`、`cudaimgproc`、`cudawarping`，构建步骤见 1.2 节的「OpenCV（可选：启用 CUDA 模块）」），配置时把 `OpenCV_DIR` 指向它即可，**无需额外的编译开关**：
+
+```bash
+cmake -S . -B build -DOpenCV_DIR=/path/to/opencv-with-cuda -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+```
+
+是否真正走 CUDA 由 YAML 节点中的 `preprocess_cuda` / `postprocess_cuda` 控制；在未编译该能力或当前没有可用 CUDA 设备时，库会打印提示并自动回退到 CPU。包含该能力的构建会额外生成 `cuda_parity_test`，用于校验 CPU 与 CUDA 两条后处理路径的一致性：
+
+```bash
+ctest --test-dir build --output-on-failure -R '^cuda_parity$'
+```
+
+> [!WARNING]
+> 当前 CUDA 预处理/后处理仍需要 host↔device 往返（预处理结果下载回 `cv::Mat`，后处理再上传输出张量），
+> 而端到端耗时主要由推理支配。实测在 `armor_v8` 上开启 CUDA 不会提升帧率，甚至可能略降
+> （TensorRT 后端基准约 626 → 539 FPS，OpenVINO CPU 后端本就几乎无变化）。
+> 因此两个配置默认均关闭该开关，仅作为可选能力保留。
+> 若需要真正的加速，需要把预处理的输出直接留在显存并交给后端（零拷贝），这属于后续优化方向；
+> 可用 `detector_speed_bench` 复现对比：
+>
+> ```bash
+> ./build/bin/detector_speed_bench --config=detect_tensorrt.yaml --key=armor_v8 --iterations=400 --cuda
+> ```
+
+### 1.6 快速运行
 
 综合演示：
 
@@ -189,7 +326,7 @@ ctest --test-dir build --output-on-failure -R '^detector_smoke$'
 - **输出形状自动识别**：`postprocess_mode=auto` 时根据模型输出张量形状选择对应后处理器，减少模型替换时的重复配置。
 - **双推理后端**：默认使用 OpenVINO；具备 NVIDIA CUDA 与 TensorRT 环境时可构建 TensorRT 后端。
 - **同步与流水推理**：OpenVINO 后端支持 `sync`、双请求 `async` 和四请求 `async4`，异步请求各自持有预处理缓冲区。
-- **单一配置来源**：模型路径、推理模式、后端、设备、置信度阈值与后处理模式集中在 JSON 中维护，更换模型无需重新编译，修改 JSON 文件即可。
+- **单一配置来源**：模型路径、推理模式、后端、设备、置信度阈值与后处理模式集中在 YAML 中维护，更换模型无需重新编译，修改 YAML 文件即可。
 - **无硬件复现**：随仓视频和模型可直接驱动三模型综合演示和性能测试，不依赖相机或机器人硬件。
 
 ## 3. 软件功能
@@ -424,7 +561,7 @@ flowchart LR
 flowchart LR
     A[应用层<br/>main / main_test_speed]
     B[接入层<br/>ArmorDetector / RuneDetector]
-    C[公开接口层<br/>ArmorModel / RuneModel / JsonConfig]
+    C[公开接口层<br/>ArmorModel / RuneModel / YamlConfig]
     D[预处理层<br/>resize / letterbox]
     E[推理抽象层<br/>InferenceEngine]
     F[推理后端<br/>OpenVINOEngine / TensorRTEngine]
@@ -521,7 +658,7 @@ $$
 1. **模型差异收敛在部署层**：上层只接触装甲板与能量机关两种稳定结果结构，V5/V8 张量布局、关键点索引和类别解析由独立后处理器承担。
 2. **用张量签名自动匹配后处理**：部署库依据输出形状区分已支持的模型契约，并在形状未知时直接报错，避免模型与后处理器静默错配。
 3. **异步缓冲区生命周期与推理请求绑定**：双请求和四请求模式为每个槽位保留成员级图像缓冲区，防止异步推理仍在读取输入时局部 `cv::Mat` 已被释放。
-4. **同一配置贯穿演示与测试**：示例程序和性能程序从相同 JSON 节点读取模型、设备与推理模式，降低重复默认值造成的复现偏差。
+4. **同一配置贯穿演示与测试**：示例程序和性能程序从相同 YAML 节点读取模型、设备与推理模式，降低重复默认值造成的复现偏差。
 5. **兼顾快速接入与离线验证**：公开模型接口可嵌入上层视觉系统，随仓视频、绘制函数和结果导出又能在无机器人硬件时独立检查完整检测链路。
 
 ## 8. 接口与配置
@@ -531,8 +668,8 @@ $$
 ```cpp
 #include "NNDetector.hpp"
 
-JsonConfig armor_config{
-    "src/app_plugin/detector/config/detect.json",
+YamlConfig armor_config{
+    "src/app_plugin/detector/config/detect_openvino.yaml",
     "armor_v8",
     "所有模型"};
 ArmorDetector armor_detector(armor_config, 1); // 当前配置使用 async
@@ -541,8 +678,8 @@ if (auto output = armor_detector.process(frame, 1)) {
     consume(output->image, output->results);
 }
 
-JsonConfig rune_config{
-    "src/app_plugin/detector/config/detect.json",
+YamlConfig rune_config{
+    "src/app_plugin/detector/config/detect_openvino.yaml",
     "rune_detect",
     "所有模型"};
 RuneDetector rune_detector(rune_config, 0); // 当前配置使用 sync
@@ -553,24 +690,85 @@ if (auto output = rune_detector.process(frame)) {
 
 预热结束后，即使画面中没有有效目标，`process` 也会返回对应画面，其中 `results` 是空 `vector`。
 
-### 8.2 JSON 配置
+### 8.2 YAML 配置
 
-配置文件为 [`src/app_plugin/detector/config/detect.json`](src/app_plugin/detector/config/detect.json)：
+模型配置按推理后端拆分为两份，字段结构一致，仅 `deploy_way`、`device` 与模型路径不同：
 
-| 节点 | 用途 | 当前配置 |
+| 配置文件 | 适用后端 | 说明 |
 | --- | --- | --- |
-| `armor_v8` | V8 装甲板演示与性能测试 | `async / openvino / GPU / auto / 0.5` |
-| `armor_v5` | V5 装甲板演示与性能测试 | `async / openvino / GPU / auto / 0.5` |
-| `rune_detect` | 能量机关演示与性能测试 | `sync / openvino / GPU / auto / 0.5` |
+| [`detect_openvino.yaml`](src/app_plugin/detector/config/detect_openvino.yaml) | OpenVINO | `deploy_way=openvino`，模型为 `openvino/xxx.xml`，`device=CPU`（有 Intel GPU 时可自行改 `GPU`） |
+| [`detect_tensorrt.yaml`](src/app_plugin/detector/config/detect_tensorrt.yaml) | TensorRT | `deploy_way=tensorrt`，模型为 `onnx/xxx.onnx`，默认开启 OpenCV CUDA 预处理/后处理 |
+
+`main` 与 `main_test_speed` 默认使用 `detect_openvino.yaml`；`main` 也可用 `--config` 指定其它配置：
+
+```bash
+./build/bin/main                                          # 默认 detect_openvino.yaml
+./build/bin/main --config=detect_tensorrt.yaml            # 切到 TensorRT 配置
+./build-cuda/bin/main --config=detect_openvino_cuda.yaml  # OpenVINO + CUDA 预处理/后处理
+./build-trt-cuda/bin/main --config=detect_tensorrt_cuda.yaml
+```
+
+配置为普通 YAML，与后端无关的字段结构一致，例如：
+
+```yaml
+armor_v8:
+  xml: onnx/Infantry-v8n-fp16-20260726-D1.8w-B16.onnx
+  infer_mode: async
+  deploy_way: tensorrt
+  postprocess_mode: auto
+  device: GPU
+  score_threshold: 0.5
+  preprocess_cuda: false
+  postprocess_cuda: false
+```
+
+两个后端配置都包含以下节点：
+
+| 节点 | 用途 |
+| --- | --- |
+| `armor_v8` | V8 装甲板演示与性能测试 |
+| `armor_v5` | V5 装甲板演示与性能测试 |
+| `rune_detect` | 能量机关演示与性能测试 |
 
 | 字段 | 含义 |
 | --- | --- |
-| `xml` | 模型路径。优先相对 `JsonConfig.model_folder` 解析；找不到时会回退到其父目录（模型仓库根，即 `所有模型/`）及在其下按文件名递归查找，因此可写 `onnx/xxx.onnx` 或直接写文件名 |
+| `xml` | 模型路径。优先相对 `YamlConfig.model_folder` 解析；找不到时会回退到其父目录（模型仓库根，即 `所有模型/`）及在其下按文件名递归查找，因此可写 `onnx/xxx.onnx` 或直接写文件名 |
 | `infer_mode` | `sync`、`async` 或 `async4` |
-| `deploy_way` | `openvino` 或 `tensorrt` |
+| `deploy_way` | `openvino` 或 `tensorrt`，需与二进制后端一致 |
 | `postprocess_mode` | `auto` 或显式后处理类型 |
-| `device` | OpenVINO 设备名，例如 `CPU` 、 `GPU` 或 `NPU` |
+| `device` | OpenVINO 设备名，例如 `CPU` 、 `GPU` 或 `NPU`（TensorRT 后端忽略该字段） |
 | `score_threshold` | 候选置信度阈值 |
+| `preprocess_cuda` | 可选，是否用 OpenCV CUDA 加速预处理（缩放与 padding），默认 `false` |
+| `postprocess_cuda` | 可选，是否用 OpenCV CUDA 加速后处理（候选解码），默认 `false` |
+
+> 也可用 `cuda` 一个字段同时开关预处理与后处理。需要构建时将 `OpenCV_DIR` 指向带 CUDA 模块的 OpenCV（CMake 会自动启用，无需额外开关），否则会打印提示并回退到 CPU。当前实测对端到端帧率无明显提升（见 [1.5](#15-opencv-cuda-加速可选)），默认关闭。
+
+### 8.3 运行时 CUDA 管理
+
+除了 YAML 配置，调用方还可以在运行时通过 `YamlConfig` 覆盖 CUDA 开关（`std::optional<bool>`，未设置时使用配置文件取值）：
+
+```cpp
+YamlConfig config{"src/app_plugin/detector/config/detect_openvino.yaml", "armor_v8", "所有模型"};
+config.preprocess_cuda = true;   // 强制启用预处理 CUDA
+config.postprocess_cuda = false; // 强制关闭后处理 CUDA
+ArmorDetector detector(config, 0);
+```
+
+`opencvCudaAvailable()` 返回当前构建是否启用 OpenCV CUDA 且存在可用 CUDA 设备。
+
+示例程序 `main` 与 `detector_speed_bench` 统一使用 `cv::CommandLineParser` 解析配置：位置参数为项目根目录，`--config` 选择配置文件（默认 `detect_openvino.yaml`，可写文件名或路径），`-h/--help` 查看全部参数。
+
+```bash
+./build-cuda/bin/main --cuda                          # 启用预处理 + 后处理 CUDA
+./build-cuda/bin/main --config=detect_tensorrt.yaml   # 选择 TensorRT 配置
+./build-cuda/bin/main --no-cuda --config=/abs/config.yaml
+./build-cuda/bin/main -h
+
+./build-trt-cuda/bin/detector_speed_bench --config=detect_tensorrt.yaml --key=armor_v8 --iterations=400 --cuda
+./build-trt-cuda/bin/detector_speed_bench --config=detect_tensorrt.yaml --key=armor_v8 --iterations=400 --no-cuda
+```
+
+> 配置管理基于 `cv::CommandLineParser`；已兼容 `--config=value` 与 `--config value` 两种写法（空格形式会在解析前自动归一化）。
 
 ## 9. 目录结构
 
@@ -592,13 +790,20 @@ if (auto output = rune_detector.process(frame)) {
 │   │       ├── CMakeLists.txt
 │   │       └── README.md                  # 部署库内部的接口说明
 │   └── app_plugin/detector/               # 最小接入与离线复现层
-│       ├── config/detect.json             # 运行配置
-│       ├── include/                       # 接入层公开头文件
+│       ├── config/detect_openvino.yaml    # OpenVINO 运行配置
+│       ├── config/detect_openvino_cuda.yaml   # OpenVINO + CUDA
+│       ├── config/detect_tensorrt.yaml    # TensorRT 运行配置
+│       ├── config/detect_tensorrt_cuda.yaml   # TensorRT + CUDA
+│       ├── include/NNDetector.hpp         # 接入层公开头文件
+│       ├── include/AppConfig.hpp          # cv::CommandLineParser 配置管理
 │       ├── src/                           # 接入层实现
 │       ├── examples/main.cpp              # V5、V8 与能量机关综合演示
 │       ├── tests/
 │       │   ├── detector_smoke_test.cpp    # 独立自动测试
-│       │   ├── detector_smoke.json        # 自动测试 CPU 配置
+│       │   ├── detector_smoke.yaml        # 自动测试 CPU 配置
+│       │   ├── cuda_parity_test.cpp       # CPU/CUDA 一致性测试（启用 CUDA 时）
+│       │   ├── cuda_parity_*.yaml         # 一致性测试配置
+│       │   ├── detector_speed_bench.cpp   # 端到端帧率对比工具
 │       │   └── main_test_speed.cpp        # 性能测试
 │       └── CMakeLists.txt
 ├── resource/
@@ -627,19 +832,6 @@ if (auto output = rune_detector.process(frame)) {
 - [broalantaps/RobotDetectionModel 2024赛季识别模型开源仓库](https://github.com/broalantaps/RobotDetectionModel) 与 [RoboMaster RobotPilots战队-24赛季识别模型](https://bbs.robomaster.com/article/54091?source=4)
 
 第三方运行依赖分别受其自身许可约束，包括 [OpenCV](https://github.com/opencv/opencv/blob/4.x/LICENSE)、[OpenVINO](https://github.com/openvinotoolkit/openvino/blob/master/LICENSE)、[CUDA Toolkit](https://docs.nvidia.com/cuda/eula/index.html) 与 [TensorRT](https://docs.nvidia.com/deeplearning/tensorrt/latest/reference/eula.html)。
-
-### 11.2 致谢
-感谢2026赛季全体视觉组同学，尤其是梯队队员在数据集上给予我的大力支持，很抱歉今年给你们派了太多数据集，非常感谢你们支持网络组的工作。
-
-感谢段神提供的快速标注的数据集，在分区赛期间提供了关键的基地装甲板。今年请务必继续大力支持27届网络组的数据集工作，劳者多牢。
-
-感谢戴哥给我提供的训练模型上的指导，v8架构的许多改进都是基于您的训练代码的修改思路做出的尝试，也感谢戴哥提供的优质模型为我评判模型功能提供了标准的baseline。同时也感谢聂宇航和舞与萌对改进模型方向上的重大帮助，你们的集思广益很有启发性，今年我会把没完成的尝试写进工作交接里。
-
-感谢陈泓宇组长在我压力最大的时候提供的精神上帮助，没有你我打不到国赛。
-
-感谢自瞄组尤其是哨兵为模型测试提供的反馈意见，抱歉今年的模型总是有问题，感谢你们愿意尝试新模型。
-
-再次感谢各位视觉组同学的大力帮助。
 
 ### 11.3 开源许可证
 

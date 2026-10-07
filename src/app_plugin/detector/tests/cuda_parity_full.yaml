@@ -1,0 +1,28 @@
+# 模型/运行配置（YAML 格式，迁移自原 JSON 配置）
+armor_v8:
+  xml: openvino/Infantry-v8n-fp16-20260726-D1.8w-B16/Infantry-v8n-fp16-20260726-D1.8w-B16.xml
+  infer_mode: sync
+  deploy_way: openvino
+  postprocess_mode: auto
+  device: CPU
+  score_threshold: 0.5
+  preprocess_cuda: true
+  postprocess_cuda: true
+armor_v5:
+  xml: openvino/Infantry-v5n-fp16-20250725/Infantry-v5n-Release-20260725.xml
+  infer_mode: sync
+  deploy_way: openvino
+  postprocess_mode: auto
+  device: CPU
+  score_threshold: 0.5
+  preprocess_cuda: true
+  postprocess_cuda: true
+rune_detect:
+  xml: openvino/Rune-v8n-fp16-20260624-D14367-B16/Rune-v8n-fp16-20260624-D14367-B16.xml
+  infer_mode: sync
+  deploy_way: openvino
+  postprocess_mode: auto
+  device: CPU
+  score_threshold: 0.5
+  preprocess_cuda: true
+  postprocess_cuda: true

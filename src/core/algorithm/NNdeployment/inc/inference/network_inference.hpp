@@ -4,6 +4,10 @@
 
 #include <opencv2/core.hpp>
 
+#ifndef NNDEPLOYMENT_WITH_OPENCV_CUDA
+#define NNDEPLOYMENT_WITH_OPENCV_CUDA 0
+#endif
+
 class YOLOModel::InferenceEngine
 {
 public:
@@ -24,6 +28,16 @@ public:
     InferParam m_infer_param;
 
 protected:
+#if NNDEPLOYMENT_WITH_OPENCV_CUDA
+    // 使用 OpenCV CUDA 在 GPU 上完成缩放与 padding，写入 output_buffer。
+    // 成功返回 true；CUDA 不可用时返回 false，由调用方回退到 CPU 路径。
+    static bool cudaResizeAndPad(const cv::Mat &origin_image,
+                                 int target_width, int target_height,
+                                 int new_width, int new_height,
+                                 int pad_x, int pad_y,
+                                 cv::Mat &output_buffer);
+#endif
+
     ModelConfig m_model_config;
     DebugConfig m_debug_config;
 };

@@ -1,0 +1,28 @@
+# 模型/运行配置（YAML 格式，迁移自原 JSON 配置）
+armor_v8:
+  xml: onnx/Infantry-v8n-fp16-20260726-D1.8w-B16.onnx
+  infer_mode: async
+  deploy_way: tensorrt
+  postprocess_mode: auto
+  device: GPU
+  score_threshold: 0.5
+  preprocess_cuda: false
+  postprocess_cuda: false
+armor_v5:
+  xml: onnx/Infantry-v8n-fp16-20260726-D1.8w-B16.onnx
+  infer_mode: async
+  deploy_way: tensorrt
+  postprocess_mode: auto
+  device: GPU
+  score_threshold: 0.5
+  preprocess_cuda: false
+  postprocess_cuda: false
+rune_detect:
+  xml: onnx/Rune-v8n-fp16-20260624.onnx
+  infer_mode: sync
+  deploy_way: tensorrt
+  postprocess_mode: auto
+  device: GPU
+  score_threshold: 0.5
+  preprocess_cuda: false
+  postprocess_cuda: false

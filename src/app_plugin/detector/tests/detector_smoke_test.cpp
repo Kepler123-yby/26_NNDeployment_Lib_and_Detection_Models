@@ -33,10 +33,10 @@ cv::Mat readFrame(const fs::path &path)
     return frame;
 }
 
-JsonConfig config(const fs::path &root, const std::string &key)
+YamlConfig config(const fs::path &root, const std::string &key)
 {
-    return JsonConfig{
-        (root / "src/app_plugin/detector/tests/detector_smoke.json").string(),
+    return YamlConfig{
+        (root / "src/app_plugin/detector/tests/detector_smoke.yaml").string(),
         key,
         (root / "所有模型").string()};
 }

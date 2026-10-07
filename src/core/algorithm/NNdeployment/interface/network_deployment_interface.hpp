@@ -3,25 +3,33 @@
 #include <opencv2/core.hpp>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 class YOLOModel;
 
-// JSON 配置入口所需的三个路径参数。
-class JsonConfig
+// 当前构建是否启用 OpenCV CUDA，且存在可用的 CUDA 设备。
+bool opencvCudaAvailable();
+
+// YAML 配置入口所需的三个路径参数。
+class YamlConfig
 {
 public:
-    // json路径、json内部key、模型文件夹路径。
+    // yaml路径、yaml内部key、模型文件夹路径。
     // model_folder 推荐传模型仓库根（如 "所有模型"），节点 xml 里带后端子目录
     // （openvino/、onnx/、tensorrt/）；也兼容传某个后端子目录的旧写法。
-    JsonConfig(std::string json_path,
+    YamlConfig(std::string yaml_path,
                std::string model_key,
                std::string model_folder);
 
-    std::string json_path;
+    std::string yaml_path;
     std::string model_key;
     std::string model_folder;
+
+    // 可选：覆盖 YAML 节点中的 CUDA 开关。未设置（std::nullopt）时使用配置文件中的取值。
+    std::optional<bool> preprocess_cuda;
+    std::optional<bool> postprocess_cuda;
 };
 
 // 装甲板检测结果，坐标均为原图像素坐标。
@@ -70,9 +78,11 @@ public:
                const std::string &device = "GPU",
                float confidence_threshold = 0.5f,
                const std::string &postprocess_mode = "auto_detect",
-               const DebugConfig &debug_config = DebugConfig());
-    // 从 JSON 的指定节点读取模型配置。
-    explicit ArmorModel(const JsonConfig &json_config,
+               const DebugConfig &debug_config = DebugConfig(),
+               bool preprocess_cuda = false,
+               bool postprocess_cuda = false);
+    // 从 YAML 的指定节点读取模型配置。
+    explicit ArmorModel(const YamlConfig &yaml_config,
                         const DebugConfig &debug_config = DebugConfig());
     ~ArmorModel() noexcept;
 
@@ -104,9 +114,11 @@ public:
               const std::string &device = "GPU",
               float confidence_threshold = 0.5f,
               const std::string &postprocess_mode = "auto_detect",
-              const DebugConfig &debug_config = DebugConfig());
-    // 从 JSON 的指定节点读取模型配置。
-    explicit RuneModel(const JsonConfig &json_config,
+              const DebugConfig &debug_config = DebugConfig(),
+              bool preprocess_cuda = false,
+              bool postprocess_cuda = false);
+    // 从 YAML 的指定节点读取模型配置。
+    explicit RuneModel(const YamlConfig &yaml_config,
                        const DebugConfig &debug_config = DebugConfig());
     ~RuneModel() noexcept;
 

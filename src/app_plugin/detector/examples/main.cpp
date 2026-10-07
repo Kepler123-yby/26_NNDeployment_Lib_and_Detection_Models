@@ -1,4 +1,5 @@
 #include "NNDetector.hpp"
+#include "AppConfig.hpp"
 
 #include <opencv2/imgproc.hpp>
 #include <opencv2/videoio.hpp>
@@ -35,10 +36,14 @@ struct VideoClip
 
 constexpr double kShowcaseSeconds = 10.0;
 
-fs::path projectRoot(int argc, char **argv)
+// 构造 YamlConfig 并应用命令行 CUDA 覆盖。
+YamlConfig makeYamlConfig(const fs::path &config_path, const std::string &config_key,
+                          const fs::path &models, const app::CudaOptions &cuda)
 {
-    return fs::absolute(argc > 1 ? fs::path(argv[1])
-                                 : fs::path(NNDEPLOYMENT_PROJECT_ROOT));
+    YamlConfig config{config_path.string(), config_key, models.string()};
+    config.preprocess_cuda = cuda.preprocess;
+    config.postprocess_cuda = cuda.postprocess;
+    return config;
 }
 
 cv::VideoCapture openVideo(const fs::path &path)
@@ -170,11 +175,12 @@ VideoResult runArmor(const fs::path &root,
                      const fs::path &output_dir,
                      const std::string &config_key,
                      const std::string &output_name,
-                     std::size_t pipeline_delay)
+                     std::size_t pipeline_delay,
+                     const app::CudaOptions &cuda)
 {
     const fs::path models = root / "所有模型";
     ArmorDetector detector(
-        JsonConfig{config_path.string(), config_key, models.string()},
+        makeYamlConfig(config_path, config_key, models, cuda),
         pipeline_delay);
     VideoClip clip = openMiddleClip(root / "测试视频/装甲板.mp4");
     const fs::path output_path = output_dir / output_name;
@@ -198,11 +204,12 @@ VideoResult runArmor(const fs::path &root,
 
 VideoResult runRune(const fs::path &root, const fs::path &config_path,
                     const fs::path &output_dir,
-                    std::size_t pipeline_delay)
+                    std::size_t pipeline_delay,
+                    const app::CudaOptions &cuda)
 {
     const fs::path models = root / "所有模型";
     RuneDetector detector(
-        JsonConfig{config_path.string(), "rune_detect", models.string()},
+        makeYamlConfig(config_path, "rune_detect", models, cuda),
         pipeline_delay);
     VideoClip clip = openMiddleClip(root / "测试视频/符.avi");
     const fs::path output_path = output_dir / "rune_result.mp4";
@@ -229,16 +236,26 @@ int main(int argc, char **argv)
 {
     try
     {
-        const fs::path root = projectRoot(argc, argv);
-        const fs::path config = argc > 2
-                                    ? fs::absolute(fs::path(argv[2]))
-                                    : root / "src/app_plugin/detector/config/detect.json";
+        const app::CommandLine cli(argc, argv, {"config", "c"});
+        cv::CommandLineParser parser(cli.argc(), cli.argv(), app::commonKeys());
+        parser.about("NNdeployment 综合演示（OpenVINO / TensorRT + 可选 OpenCV CUDA）");
+        if (!app::handleParser(parser))
+            return parser.has("help") ? 0 : 1;
+
+        const app::AppConfig app_config = app::resolveAppConfig(parser, "detect_openvino.yaml");
+        const fs::path root = app_config.root;
+
+        std::cout << "配置文件: " << app_config.config_path.string() << '\n'
+                  << "OpenCV CUDA 可用: " << (opencvCudaAvailable() ? "是" : "否") << '\n'
+                  << "CUDA 预处理: " << app::describeCuda(app_config.cuda.preprocess)
+                  << " | CUDA 后处理: " << app::describeCuda(app_config.cuda.postprocess) << std::endl;
+
         const fs::path output_dir = root / "build/results/main";
-        const VideoResult v5 = runArmor(root, config, output_dir, "armor_v5",
-                                        "armor_v5_result.mp4", 1);
-        const VideoResult v8 = runArmor(root, config, output_dir, "armor_v8",
-                                        "armor_v8_result.mp4", 1);
-        const VideoResult rune = runRune(root, config, output_dir, 0);
+        const VideoResult v5 = runArmor(root, app_config.config_path, output_dir, "armor_v5",
+                                        "armor_v5_result.mp4", 1, app_config.cuda);
+        const VideoResult v8 = runArmor(root, app_config.config_path, output_dir, "armor_v8",
+                                        "armor_v8_result.mp4", 1, app_config.cuda);
+        const VideoResult rune = runRune(root, app_config.config_path, output_dir, 0, app_config.cuda);
 
         std::cout << "Armor V5 output frames: " << v5.frames << '\n'
                   << "Armor V5 video: " << v5.output_path << '\n'

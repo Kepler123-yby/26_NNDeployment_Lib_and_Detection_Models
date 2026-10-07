@@ -38,16 +38,18 @@ struct TestCase
     std::size_t pipeline_delay;
 };
 
-void runTest(const fs::path &root, const TestCase &test)
+void runTest(const fs::path &root, const TestCase &test,
+             const std::string &benchmark_device)
 {
-    const fs::path config_path = root / "src/app_plugin/detector/config/detect.json";
+    // 性能测试始终使用 OpenVINO 模型与配置。
+    const fs::path config_path = root / "src/app_plugin/detector/config/detect_openvino.yaml";
     const fs::path model_folder = root / "所有模型";
     cv::VideoCapture video((root / test.video_path).string());
     cv::Mat frame;
     if (!video.isOpened() || !video.read(frame) || frame.empty())
         throw std::runtime_error("无法读取测试视频: " + (root / test.video_path).string());
 
-    const JsonConfig config(config_path.string(), test.config_key,
+    const YamlConfig config(config_path.string(), test.config_key,
                             model_folder.string());
     if (test.task == Task::Armor)
     {
@@ -68,7 +70,7 @@ void runTest(const fs::path &root, const TestCase &test)
     benchmark.perf_hint = "throughput";
     benchmark.time_seconds = 20;
     benchmark.inference_only = false;
-    MPT::runOfficialBenchmark((root / test.model_path).string(), "GPU",
+    MPT::runOfficialBenchmark((root / test.model_path).string(), benchmark_device,
                               test.infer_mode, benchmark);
 }
 } // namespace
@@ -79,6 +81,8 @@ int main(int argc, char **argv)
     {
         const fs::path root = fs::absolute(
             argc > 1 ? fs::path(argv[1]) : fs::path(NNDEPLOYMENT_PROJECT_ROOT));
+        // benchmark_app 的目标设备：无 Intel GPU 的机器用 CPU；可用第 2 个参数覆盖（如 GPU）。
+        const std::string benchmark_device = argc > 2 ? argv[2] : "CPU";
         const std::array<TestCase, 3> tests = {{
             {"Armor V8", "armor_v8", Task::Armor,
              "所有模型/openvino/Infantry-v8n-fp16-20260726-D1.8w-B16/Infantry-v8n-fp16-20260726-D1.8w-B16.xml",
@@ -97,7 +101,7 @@ int main(int argc, char **argv)
             try
             {
                 std::cout << "Testing " << test.name << std::endl;
-                runTest(root, test);
+                runTest(root, test, benchmark_device);
             }
             catch (const std::exception &error)
             {

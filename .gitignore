@@ -1,7 +1,6 @@
 .history/
-build/
+build*/
 git_commit.txt
 temp
-build-trt/
 scripts/
 docs/
