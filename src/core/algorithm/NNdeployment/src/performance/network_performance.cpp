@@ -135,9 +135,13 @@ std::string formatPerformanceReport(const std::string &model_path,
     stream << "\n## Model Performance Report\n\n"
            << "- Model: " << model.filename().string() << '\n'
            << "- Model path: " << model_path << '\n'
-           << "- Device: " << device << '\n'
-           << "- Inference mode: " << infer_mode << '\n'
-           << "- Benchmark performance hint: " << config.perf_hint << "\n\n"
+           << "- Benchmark device: " << device << '\n'
+           << "- Inference mode: " << infer_mode << '\n';
+    if (!config.preprocess_device.empty())
+        stream << "- Preprocess device: " << config.preprocess_device << '\n';
+    if (!config.postprocess_device.empty())
+        stream << "- Postprocess device: " << config.postprocess_device << '\n';
+    stream << "- Benchmark performance hint: " << config.perf_hint << "\n\n"
            << "| Test scope | Metric | Value | Unit |\n"
            << "| --- | --- | ---: | --- |\n";
 

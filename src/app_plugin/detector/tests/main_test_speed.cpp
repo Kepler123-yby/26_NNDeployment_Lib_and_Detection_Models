@@ -65,7 +65,6 @@ void runTest(const app::AppConfig &app_config, const TestCase &test,
             c.model = model_arg;
         return c;
     }();
-    std::cout << test.name << " " << app::describeDevice(config) << std::endl;
 
     if (test.task == Task::Armor)
     {
@@ -88,10 +87,14 @@ void runTest(const app::AppConfig &app_config, const TestCase &test,
                                          : fs::absolute(fs::path(model_arg));
     std::cout << "benchmark 模型: " << benchmark_model.string() << std::endl;
 
+    const DevicePlan device_plan = resolveDevicePlan(config);
+
     MPT::OfficialBenchmarkConfig benchmark;
     benchmark.perf_hint = "throughput";
     benchmark.time_seconds = 20;
     benchmark.inference_only = false;
+    benchmark.preprocess_device = device_plan.preprocess_cuda ? "CUDA" : "CPU";
+    benchmark.postprocess_device = device_plan.postprocess_cuda ? "CUDA" : "CPU";
     MPT::runOfficialBenchmark(benchmark_model.string(), benchmark_device,
                               test.infer_mode, benchmark);
 }
@@ -118,9 +121,7 @@ int main(int argc, char **argv)
                   << " | benchmark 设备: " << benchmark_device
                   << (only_key.empty() ? "" : (" | 测试用例: " + only_key))
                   << (model_arg.empty() ? "" : (" | 模型: " + model_arg))
-                  << " | OpenCV CUDA 可用: " << (opencvCudaAvailable() ? "是" : "否")
-                  << " | 预处理=" << app::describeCuda(app_config.cuda.preprocess)
-                  << " 后处理=" << app::describeCuda(app_config.cuda.postprocess) << std::endl;
+                  << " | OpenCV CUDA 可用: " << (opencvCudaAvailable() ? "是" : "否") << std::endl;
 
         const std::array<TestCase, 3> tests = {{
             {"Armor V8", "armor_v8", Task::Armor,
