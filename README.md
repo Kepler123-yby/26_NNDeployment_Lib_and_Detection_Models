@@ -276,49 +276,138 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure -R '^cuda_parity$'
 ```
 
-> [!WARNING]
-> 当前 CUDA 预处理/后处理仍需要 host↔device 往返（预处理结果下载回 `cv::Mat`，后处理再上传输出张量），
-> 而端到端耗时主要由推理支配。实测在 `armor_v8` 上开启 CUDA 不会提升帧率，甚至可能略降
-> （TensorRT 后端基准约 626 → 539 FPS，OpenVINO CPU 后端本就几乎无变化）。
-> 因此两个配置默认均关闭该开关，仅作为可选能力保留。
-> 若需要真正的加速，需要把预处理的输出直接留在显存并交给后端（零拷贝），这属于后续优化方向；
-> 可用 `detector_speed_bench` 复现对比：
+> [!NOTE]
+> 预处理已改为在 GPU 上一次性完成 letterbox + BGR→RGB + /255 + HWC→CHW（融合了原先 CPU 的 `blobFromImage`），
+> 在桌面即可明显降低耗时（实测 `armor_v8` 预处理约 1.67ms → 1.05ms）。CUDA 后处理在 x86 桌面基本持平
+> （CPU 后处理已很快），在 ARM/Jetson 上收益更明显。默认关闭，按需在 YAML 或命令行开启；
+> 可用 `detector_speed_bench` 对比：
 >
 > ```bash
-> ./build/bin/detector_speed_bench --config=detect_tensorrt.yaml --key=armor_v8 --iterations=400 --cuda
+> ./build/bin/detector_speed_bench --config=detect_tensorrt.yaml --key=armor_v8 --iterations=500 --cuda
+> ./build/bin/detector_speed_bench --config=detect_tensorrt.yaml --key=armor_v8 --iterations=500 --no-cuda
 > ```
 
-### 1.6 快速运行
+### 1.6 运行与命令行工具
 
-综合演示：
+所有可执行文件位于 `build/bin`，统一使用 `cv::CommandLineParser`，遵循同一套约定：
 
-```bash
-./build/bin/main
-```
+| 约定 | 说明 |
+| --- | --- |
+| 位置参数（可选） | 项目根目录，默认取构建时记录的工程根；测试视频、模型、结果都相对它定位 |
+| `-c` / `--config` | 配置文件路径。可写**文件名**（到对应目录下查找）、相对路径或绝对路径 |
+| `-h` / `--help` | 打印该工具的全部参数 |
+| 值的形式 | `--config=a.yaml` 与 `--config a.yaml` 均可（解析前自动归一化） |
 
-`main` 在一次运行中完成三个模型的离线演示：`armor_v5` 和 `armor_v8` 读取 `测试视频/装甲板.mp4` 的中间 10 秒，`rune_detect` 读取 `测试视频/符.avi` 的中间 10 秒。输出画面包含目标框、类别和关键点序号；异步装甲板模型的输出不包含尚未返回结果的末尾流水帧。结果视频写入：
+统一的 CUDA 开关（覆盖 YAML 中的 `preprocess_cuda` / `postprocess_cuda`）：
 
-- `build/results/main/armor_v5_result.mp4`
-- `build/results/main/armor_v8_result.mp4`
-- `build/results/main/rune_result.mp4`
+| 开关 | 作用 |
+| --- | --- |
+| `--cuda` | 预处理 + 后处理都走 CUDA |
+| `--no-cuda` | 全部走 CPU |
+| `--cuda-pre` / `--no-cuda-pre` | 只开关预处理 |
+| `--cuda-post` / `--no-cuda-post` | 只开关后处理 |
 
-终端同时输出各模型处理的帧数与结果路径。
+> 在未编译 OpenCV CUDA 或当前没有可用 CUDA 设备时，会打印提示并自动回退到 CPU；程序可通过 `opencvCudaAvailable()` 查询。
 
-性能测试：
-
-```bash
-./build/bin/main_test_speed
-```
-
-当前测试程序依次读取 `armor_v8`、`armor_v5` 和 `rune_detect` 配置，并使用相应测试视频的首帧分别连续推理 2000 次，输出部署库各阶段统计；随后使用相同模型、设备和推理模式运行 20 秒 `benchmark_app`。结果追加写入 `build/bin/network_mpt.log`。
-
-独立自动测试：
+#### 综合演示 `main`
 
 ```bash
-ctest --test-dir build --output-on-failure -R '^detector_smoke$'
+./build/bin/main [root] [--config=<yaml>] [--cuda|--no-cuda|...]
 ```
 
-`detector_smoke_test` 位于 `src/app_plugin/detector/tests`，使用独立的 CPU 配置检查 V5、V8、Rune 的模型加载与首帧推理、空白图像空结果、空输入和错误配置，不参与综合演示或性能测试。
+`main` 一次运行完成三个模型的离线演示：`armor_v5` / `armor_v8` 读 `测试视频/装甲板.mp4` 中间 10 秒，`rune_detect` 读 `测试视频/符.avi` 中间 10 秒；输出带目标框、类别与关键点序号的视频到 `build/results/main/`：
+
+- `armor_v5_result.mp4`、`armor_v8_result.mp4`、`rune_result.mp4`
+
+终端会打印使用的配置文件、`OpenCV CUDA 可用` 以及生效的预处理/后处理方式。
+
+```bash
+./build/bin/main                                            # 默认 detect_openvino.yaml
+./build/bin/main --config=detect_tensorrt.yaml             # TensorRT 后端
+./build/bin/main --config=/abs/path/detect_openvino.yaml
+./build-cuda/bin/main --config=detect_openvino_cuda.yaml --cuda
+```
+
+#### 端到端测速 `detector_speed_bench`
+
+对**单个模型**重复推理，输出平均耗时与 FPS，最适合对比前后处理 / 后端 / CUDA 开关。
+
+```bash
+./build/bin/detector_speed_bench [root] [--config=<yaml>] [--key=<node>] \
+    [--model=<path>] [--iterations=<n>] [--video=<path>] [CUDA 开关]
+```
+
+| 参数 | 默认 | 说明 |
+| --- | --- | --- |
+| `-c` / `--config` | `detect_openvino.yaml` | 配置文件 |
+| `-k` / `--key` | `armor_v8` | 配置节点名（`armor_v8` / `armor_v5` / `rune_detect`） |
+| `--model` | 空 | 直接指定模型文件，**覆盖**配置节点里的 `xml` |
+| `-n` / `--iterations` | `500` | 重复推理次数（先预热 10 次） |
+| `-v` / `--video` | `测试视频/装甲板.mp4` | 输入视频（取首帧重复推理） |
+
+```bash
+# 对比同一模型开/关 CUDA
+./build/bin/detector_speed_bench --config=detect_tensorrt.yaml --key=armor_v8 --iterations=500 --no-cuda
+./build/bin/detector_speed_bench --config=detect_tensorrt.yaml --key=armor_v8 --iterations=500 --cuda
+# 直接指定模型文件（不看配置里的 xml）
+./build/bin/detector_speed_bench --config=detect_openvino.yaml --key=armor_v8 \
+    --model=openvino/Infantry-v8n-fp16-20260726-D1.8w-B16/Infantry-v8n-fp16-20260726-D1.8w-B16.xml
+```
+
+#### 性能测试 `main_test_speed`
+
+对 `armor_v8` / `armor_v5` / `rune_detect` 依次连续推理 `kIterations`(=2000) 次并输出各阶段耗时，随后用官方 `benchmark_app` 跑 20 秒吞吐（结果追加写入 `build/bin/network_mpt.log`）。
+
+```bash
+./build/bin/main_test_speed [root] [--config=<yaml>] [--key=<node>] \
+    [--model=<path>] [--benchmark-device=<dev>] [CUDA 开关]
+```
+
+| 参数 | 默认 | 说明 |
+| --- | --- | --- |
+| `-c` / `--config` | `detect_openvino.yaml` | 配置文件 |
+| `-k` / `--key` | 空（全部） | 只跑指定用例：`armor_v8` / `armor_v5` / `rune_detect` |
+| `--model` | 空 | 覆盖检测模型路径，**同时用于 benchmark_app** |
+| `-b` / `--benchmark-device` | `CPU` | benchmark_app 的目标设备（如 `CPU` / `GPU`） |
+
+> 该工具的 benchmark 部分固定使用 OpenVINO 模型与 `benchmark_app`，请配合 OpenVINO 构建使用。
+
+```bash
+./build/bin/main_test_speed --key=armor_v8
+./build/bin/main_test_speed --key=rune_detect --benchmark-device=CPU
+```
+
+#### 冒烟测试 `detector_smoke_test`
+
+检查 V5 / V8 / 大符 的模型加载、首帧推理、空白图像空结果、空输入与错误配置。默认使用 `tests/detector_smoke.yaml`（OpenVINO CPU 同步推理）。
+
+```bash
+./build/bin/detector_smoke_test [root] [--config=<yaml>] [CUDA 开关]
+```
+
+#### 一致性测试 `cuda_parity_test`（仅带 OpenCV CUDA 的构建）
+
+校验 CPU 与 CUDA 两条后处理路径结果一致。
+
+```bash
+./build/bin/cuda_parity_test [root] [--config=<cpu.yaml>] [--cuda-config=<cuda.yaml>] [--full-config=<full.yaml>]
+```
+
+| 参数 | 默认 | 说明 |
+| --- | --- | --- |
+| `-c` / `--config` | `cuda_parity_cpu.yaml` | CPU 基准配置 |
+| `--cuda-config` | `cuda_parity_cuda.yaml` | 仅后处理 CUDA |
+| `--full-config` | `cuda_parity_full.yaml` | 预处理 + 后处理均 CUDA |
+
+#### 用 ctest 运行测试
+
+```bash
+ctest --test-dir build --output-on-failure                 # 运行全部
+ctest --test-dir build --output-on-failure -R detector_smoke
+ctest --test-dir build --output-on-failure -R cuda_parity
+```
+
+`detector_smoke_test` 不参与综合演示或性能测试；`cuda_parity_test` 只在带 OpenCV CUDA 的构建中生成。
 
 ## 2. 核心特性
 
@@ -756,7 +845,7 @@ ArmorDetector detector(config, 0);
 
 `opencvCudaAvailable()` 返回当前构建是否启用 OpenCV CUDA 且存在可用 CUDA 设备。
 
-示例程序 `main` 与 `detector_speed_bench` 统一使用 `cv::CommandLineParser` 解析配置：位置参数为项目根目录，`--config` 选择配置文件（默认 `detect_openvino.yaml`，可写文件名或路径），`-h/--help` 查看全部参数。
+所有示例与测试程序（`main`、`detector_speed_bench`、`main_test_speed`、`detector_smoke_test`、`cuda_parity_test`）都统一使用 `cv::CommandLineParser`：位置参数为项目根目录，`--config` 选择配置文件，`-h/--help` 查看各自参数（完整用法见 [1.6 运行与命令行工具](#16-运行与命令行工具)）。
 
 ```bash
 ./build-cuda/bin/main --cuda                          # 启用预处理 + 后处理 CUDA
