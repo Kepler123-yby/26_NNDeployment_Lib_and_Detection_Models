@@ -30,6 +30,10 @@ public:
     // 可选：覆盖 YAML 节点中的 CUDA 开关。未设置（std::nullopt）时使用配置文件中的取值。
     std::optional<bool> preprocess_cuda;
     std::optional<bool> postprocess_cuda;
+
+    // 可选：直接指定模型文件路径，覆盖节点中的 xml。
+    // 绝对路径直接使用；相对路径按 model_folder 解析（与 xml 一致）。
+    std::optional<std::string> model;
 };
 
 // 装甲板检测结果，坐标均为原图像素坐标。

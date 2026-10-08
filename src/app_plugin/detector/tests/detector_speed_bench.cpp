@@ -24,6 +24,7 @@ std::string benchKeys()
 {
     return app::commonKeys() +
            "{key k|armor_v8|模型配置节点名}"
+           "{model||模型文件路径（覆盖配置中的 xml）}"
            "{iterations n|500|重复推理次数}"
            "{video v||测试视频路径（默认 测试视频/装甲板.mp4）}";
 }
@@ -34,7 +35,7 @@ int main(int argc, char **argv)
     try
     {
         const app::CommandLine cli(argc, argv,
-                                  {"config", "c", "key", "k", "iterations", "n", "video", "v"});
+                                  {"config", "c", "key", "k", "model", "iterations", "n", "video", "v"});
         cv::CommandLineParser parser(cli.argc(), cli.argv(), benchKeys());
         parser.about("NNdeployment 端到端帧率对比工具");
         if (!app::handleParser(parser))
@@ -42,6 +43,7 @@ int main(int argc, char **argv)
 
         const app::AppConfig app_config = app::resolveAppConfig(parser, "detect_openvino.yaml");
         const std::string model_key = parser.get<std::string>("key");
+        const std::string model_arg = parser.get<std::string>("model");
         const int iterations = parser.get<int>("iterations");
         const std::string video_arg = parser.get<std::string>("video");
         const fs::path video_path =
@@ -53,9 +55,17 @@ int main(int argc, char **argv)
         if (!video.isOpened() || !video.read(frame) || frame.empty())
             throw std::runtime_error("无法读取测试视频: " + video_path.string());
 
-        const YamlConfig config = app::makeYamlConfig(app_config, model_key);
+        const YamlConfig config = [&]
+        {
+            YamlConfig c = app::makeYamlConfig(app_config, model_key);
+            if (!model_arg.empty())
+                c.model = model_arg;
+            return c;
+        }();
 
         std::cout << "配置文件: " << app_config.config_path.string()
+                  << " | 节点: " << model_key
+                  << (model_arg.empty() ? "" : (" | 模型: " + model_arg))
                   << " | OpenCV CUDA 可用: " << (opencvCudaAvailable() ? "是" : "否")
                   << " | 预处理=" << app::describeCuda(app_config.cuda.preprocess)
                   << " 后处理=" << app::describeCuda(app_config.cuda.postprocess) << std::endl;
