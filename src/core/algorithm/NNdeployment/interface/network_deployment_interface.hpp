@@ -36,6 +36,10 @@ public:
     std::optional<std::string> model;
 };
 
+// 解析 YamlConfig 指定节点要加载的模型文件完整路径（不加载模型）。
+// 优先使用 config.model 覆盖值，否则读取节点里的 xml；相对路径按 model_folder 解析。
+std::string resolveModelPath(const YamlConfig &config);
+
 // 装甲板检测结果，坐标均为原图像素坐标。
 struct NetArmorResult
 {
