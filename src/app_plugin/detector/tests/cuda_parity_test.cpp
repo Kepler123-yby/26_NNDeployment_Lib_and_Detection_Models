@@ -228,10 +228,15 @@ int main(int argc, char **argv)
             require(fs::is_regular_file(path, ec), "找不到配置文件: " + path.string());
         }
 
-        std::cout << "CPU 配置: " << cpu_config.string() << '\n'
-                  << "CUDA 配置: " << cuda_config.string() << '\n'
-                  << "全 CUDA 配置: " << full_config.string()
-                  << " | OpenCV CUDA 可用: " << (opencvCudaAvailable() ? "是" : "否") << std::endl;
+        const auto describe_plan = [&root](const fs::path &path)
+        {
+            return app::describeDevice(
+                YamlConfig{path.string(), "armor_v8", (root / "所有模型").string()});
+        };
+        std::cout << "CPU 配置: " << cpu_config.string() << " (" << describe_plan(cpu_config) << ")\n"
+                  << "CUDA 配置: " << cuda_config.string() << " (" << describe_plan(cuda_config) << ")\n"
+                  << "全 CUDA 配置: " << full_config.string() << " (" << describe_plan(full_config) << ")\n"
+                  << "OpenCV CUDA 可用: " << (opencvCudaAvailable() ? "是" : "否") << std::endl;
 
         // 仅后处理 CUDA：输入张量完全相同，要求近乎精确一致。
         compareArmorVideo(root, "armor_v5", root / "测试视频/装甲板.mp4",

@@ -147,8 +147,7 @@ int main(int argc, char **argv)
 
         std::cout << "配置文件: " << app_config.config_path.string()
                   << " | OpenCV CUDA 可用: " << (opencvCudaAvailable() ? "是" : "否")
-                  << " | 预处理=" << app::describeCuda(app_config.cuda.preprocess)
-                  << " 后处理=" << app::describeCuda(app_config.cuda.postprocess) << std::endl;
+                  << " | " << app::describeDevice(app::makeYamlConfig(app_config, "armor_v8")) << std::endl;
 
         const fs::path root = app_config.root;
         const cv::Mat armor_frame = readFrame(root / "测试视频/装甲板.mp4");

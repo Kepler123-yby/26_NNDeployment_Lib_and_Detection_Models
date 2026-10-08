@@ -65,6 +65,8 @@ void runTest(const app::AppConfig &app_config, const TestCase &test,
             c.model = model_arg;
         return c;
     }();
+    std::cout << test.name << " " << app::describeDevice(config) << std::endl;
+
     if (test.task == Task::Armor)
     {
         ArmorDetector detector(config, test.pipeline_delay,

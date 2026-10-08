@@ -198,6 +198,14 @@ inline YamlConfig makeYamlConfig(const AppConfig &app_config, const std::string 
     return config;
 }
 
+// 描述某个 YamlConfig 最终生效的前后处理设备（综合考虑配置、覆盖与设备可用性）。
+inline std::string describeDevice(const YamlConfig &config)
+{
+    const DevicePlan plan = resolveDevicePlan(config);
+    return std::string("预处理设备: ") + (plan.preprocess_cuda ? "CUDA" : "CPU") +
+           " | 后处理设备: " + (plan.postprocess_cuda ? "CUDA" : "CPU");
+}
+
 // 统一处理 -h/--help 与解析错误；返回 false 表示调用方应直接退出。
 inline bool handleParser(const cv::CommandLineParser &parser)
 {
