@@ -39,6 +39,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 // 总模块：YOLOModel 构造、部署/后处理选择以及完整推理入口。
@@ -261,6 +262,27 @@ std::string modelNameFromNode(const YAML::Node &node, const YamlConfig &config)
     return name;
 }
 
+// 解析节点的预处理/后处理 CUDA 开关（含 YamlConfig 覆盖，不含设备可用性）。
+std::pair<bool, bool> cudaFlagsFromNode(const YAML::Node &node, const YamlConfig &config)
+{
+    // 未填写时保持 CPU；支持 preprocess_cuda / postprocess_cuda 单独开关，也支持 cuda 一键开关。
+    const bool cuda_all = node["cuda"] && node["cuda"].as<bool>();
+    bool preprocess_cuda = cuda_all;
+    bool postprocess_cuda = cuda_all;
+    if (node["preprocess_cuda"])
+        preprocess_cuda = node["preprocess_cuda"].as<bool>();
+    if (node["postprocess_cuda"])
+        postprocess_cuda = node["postprocess_cuda"].as<bool>();
+
+    // YamlConfig 中的覆盖值优先于配置文件（供调用方在运行时管理 CUDA）。
+    if (config.preprocess_cuda.has_value())
+        preprocess_cuda = *config.preprocess_cuda;
+    if (config.postprocess_cuda.has_value())
+        postprocess_cuda = *config.postprocess_cuda;
+
+    return {preprocess_cuda, postprocess_cuda};
+}
+
 // 从 YAML 的指定节点读取内部模型配置。
 ModelConfig loadModelConfigFromYaml(const YamlConfig &yaml_config)
 {
@@ -300,21 +322,8 @@ ModelConfig loadModelConfigFromYaml(const YamlConfig &yaml_config)
     else if (node["config_thresh"])                        // 兼容旧版本配置文件
         confidence_threshold = node["config_thresh"].as<float>();
 
-    // 可选：OpenCV CUDA 加速开关。未填写时保持 CPU。
-    // 支持 preprocess_cuda / postprocess_cuda 单独开关，也支持 cuda 一键开关。
-    const bool cuda_all = node["cuda"] && node["cuda"].as<bool>();
-    bool preprocess_cuda = cuda_all;
-    bool postprocess_cuda = cuda_all;
-    if (node["preprocess_cuda"])
-        preprocess_cuda = node["preprocess_cuda"].as<bool>();
-    if (node["postprocess_cuda"])
-        postprocess_cuda = node["postprocess_cuda"].as<bool>();
-
-    // YamlConfig 中的覆盖值优先于配置文件（供调用方在运行时管理 CUDA）。
-    if (yaml_config.preprocess_cuda.has_value())
-        preprocess_cuda = *yaml_config.preprocess_cuda;
-    if (yaml_config.postprocess_cuda.has_value())
-        postprocess_cuda = *yaml_config.postprocess_cuda;
+    // 可选：OpenCV CUDA 加速开关（含 YamlConfig 覆盖）。
+    const auto [preprocess_cuda, postprocess_cuda] = cudaFlagsFromNode(node, yaml_config);
 
     return ModelConfig(model_path, infer_mode, deploy_way, device, confidence_threshold,
                        postprocess_mode, preprocess_cuda, postprocess_cuda);
@@ -341,6 +350,28 @@ std::string resolveModelPath(const YamlConfig &config)
         throw std::runtime_error("模型配置中不存在键: " + config.model_key);
 
     return resolveModelPath(config.model_folder, modelNameFromNode(node, config));
+}
+
+// 解析某个节点最终生效的预处理/后处理是否走 CUDA（综合考虑节点配置、覆盖与设备可用性）。
+DevicePlan resolveDevicePlan(const YamlConfig &config)
+{
+    YAML::Node root;
+    try
+    {
+        root = YAML::LoadFile(config.yaml_path);
+    }
+    catch (const YAML::Exception &error)
+    {
+        throw std::runtime_error("无法打开模型配置文件: " + config.yaml_path + " (" + error.what() + ")");
+    }
+
+    const YAML::Node node = root[config.model_key];
+    if (!node)
+        throw std::runtime_error("模型配置中不存在键: " + config.model_key);
+
+    const auto [preprocess_cuda, postprocess_cuda] = cudaFlagsFromNode(node, config);
+    const bool available = opencvCudaAvailable();
+    return {preprocess_cuda && available, postprocess_cuda && available};
 }
 
 YOLOModel::InferenceEngine::InferenceEngine(const ModelConfig &model_config, const DebugConfig &debug_config) : m_model_config(model_config), m_debug_config(debug_config) {}

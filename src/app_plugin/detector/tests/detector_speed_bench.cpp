@@ -67,8 +67,7 @@ int main(int argc, char **argv)
                   << " | 节点: " << model_key
                   << (model_arg.empty() ? "" : (" | 模型: " + model_arg))
                   << " | OpenCV CUDA 可用: " << (opencvCudaAvailable() ? "是" : "否")
-                  << " | 预处理=" << app::describeCuda(app_config.cuda.preprocess)
-                  << " 后处理=" << app::describeCuda(app_config.cuda.postprocess) << std::endl;
+                  << " | " << app::describeDevice(config) << std::endl;
 
         ArmorDetector detector(config, 0, DebugConfig(false, false));
 

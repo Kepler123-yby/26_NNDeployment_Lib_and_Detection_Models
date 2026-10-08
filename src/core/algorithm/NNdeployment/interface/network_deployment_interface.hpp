@@ -40,6 +40,16 @@ public:
 // 优先使用 config.model 覆盖值，否则读取节点里的 xml；相对路径按 model_folder 解析。
 std::string resolveModelPath(const YamlConfig &config);
 
+// 预处理/后处理最终是否走 CUDA（综合考虑节点配置、YamlConfig 覆盖与设备可用性）。
+struct DevicePlan
+{
+    bool preprocess_cuda = false;
+    bool postprocess_cuda = false;
+};
+
+// 解析某个节点最终生效的设备规划（供调用方打印或决策）。
+DevicePlan resolveDevicePlan(const YamlConfig &config);
+
 // 装甲板检测结果，坐标均为原图像素坐标。
 struct NetArmorResult
 {
