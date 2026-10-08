@@ -14,6 +14,10 @@ struct OfficialBenchmarkConfig
     int iterations = 0;                               // 大于 0 时按迭代次数测试。
     bool inference_only = true;                        // 是否只统计推理阶段。
     bool no_warmup = false;                            // 是否关闭 benchmark_app 自带预热。
+
+    // 仅用于报告展示：预处理/后处理实际使用的设备（如 "CUDA" / "CPU"）。
+    std::string preprocess_device;
+    std::string postprocess_device;
 };
 
 // 累积部署库各阶段耗时，所有输入与内部统计单位均为微秒。
