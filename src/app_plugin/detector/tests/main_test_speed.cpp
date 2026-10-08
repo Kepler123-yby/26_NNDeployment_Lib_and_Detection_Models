@@ -37,7 +37,6 @@ struct TestCase
     std::string name;
     std::string config_key;
     Task task;
-    fs::path model_path;
     fs::path video_path;
     std::string infer_mode;
     std::size_t pipeline_delay;
@@ -81,9 +80,11 @@ void runTest(const app::AppConfig &app_config, const TestCase &test,
             detector.process(frame);
     }
 
+    // benchmark 的模型直接取自配置节点（与检测一致），--model 可覆盖。
     const fs::path benchmark_model = model_arg.empty()
-                                         ? (app_config.root / test.model_path)
+                                         ? fs::path(resolveModelPath(config))
                                          : fs::absolute(fs::path(model_arg));
+    std::cout << "benchmark 模型: " << benchmark_model.string() << std::endl;
 
     MPT::OfficialBenchmarkConfig benchmark;
     benchmark.perf_hint = "throughput";
@@ -121,13 +122,10 @@ int main(int argc, char **argv)
 
         const std::array<TestCase, 3> tests = {{
             {"Armor V8", "armor_v8", Task::Armor,
-             "所有模型/openvino/Infantry-v8n-fp16-20260726-D1.8w-B16/Infantry-v8n-fp16-20260726-D1.8w-B16.xml",
              "测试视频/中距离陀螺.avi", "async", 1},
             {"Armor V5", "armor_v5", Task::Armor,
-             "所有模型/openvino/Infantry-v5n-fp16-20250725/Infantry-v5n-Release-20260725.xml",
              "测试视频/中距离陀螺.avi", "async", 1},
             {"Rune V8", "rune_detect", Task::Rune,
-             "所有模型/openvino/Rune-v8n-fp16-20260624-D14367-B16/Rune-v8n-fp16-20260624-D14367-B16.xml",
              "测试视频/符.avi", "sync", 0},
         }};
 

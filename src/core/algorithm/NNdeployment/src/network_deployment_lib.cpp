@@ -248,6 +248,19 @@ T yamlValueOr(const YAML::Node &node, const char *key, const T &fallback)
     return node[key] ? node[key].as<T>() : fallback;
 }
 
+// 从 YAML 节点解析模型文件名：优先 YamlConfig.model 覆盖值，否则读节点的 xml。
+std::string modelNameFromNode(const YAML::Node &node, const YamlConfig &config)
+{
+    if (config.model.has_value() && !config.model->empty())
+        return *config.model;
+    if (!node["xml"])
+        throw std::runtime_error("模型配置缺少xml文件名: " + config.model_key);
+    const std::string name = node["xml"].as<std::string>();
+    if (name.empty())
+        throw std::runtime_error("模型配置缺少xml文件名: " + config.model_key);
+    return name;
+}
+
 // 从 YAML 的指定节点读取内部模型配置。
 ModelConfig loadModelConfigFromYaml(const YamlConfig &yaml_config)
 {
@@ -269,20 +282,7 @@ ModelConfig loadModelConfigFromYaml(const YamlConfig &yaml_config)
         throw std::runtime_error("传入的模型文件夹路径为空: " + yaml_config.model_key);
 
     // 模型文件：优先使用 YamlConfig.model 的覆盖值，否则读节点里的 xml。
-    std::string xml_name;
-    if (yaml_config.model.has_value() && !yaml_config.model->empty())
-    {
-        xml_name = *yaml_config.model;
-    }
-    else
-    {
-        if (!node["xml"])
-            throw std::runtime_error("模型配置缺少xml文件名: " + yaml_config.model_key);
-        xml_name = node["xml"].as<std::string>();
-    }
-    if (xml_name.empty())
-        throw std::runtime_error("模型配置缺少xml文件名: " + yaml_config.model_key);
-
+    const std::string xml_name = modelNameFromNode(node, yaml_config);
     const std::string model_path =
         resolveModelPath(yaml_config.model_folder, xml_name);
 
@@ -320,6 +320,28 @@ ModelConfig loadModelConfigFromYaml(const YamlConfig &yaml_config)
                        postprocess_mode, preprocess_cuda, postprocess_cuda);
 }
 } // namespace
+
+// 解析 YamlConfig 指定节点要加载的模型文件完整路径（不加载模型）。
+// 优先使用 config.model 覆盖值，否则读取节点里的 xml；相对路径按 model_folder 解析。
+// 供测试/工具在需要独立获取模型路径（如 benchmark_app）时使用。
+std::string resolveModelPath(const YamlConfig &config)
+{
+    YAML::Node root;
+    try
+    {
+        root = YAML::LoadFile(config.yaml_path);
+    }
+    catch (const YAML::Exception &error)
+    {
+        throw std::runtime_error("无法打开模型配置文件: " + config.yaml_path + " (" + error.what() + ")");
+    }
+
+    const YAML::Node node = root[config.model_key];
+    if (!node)
+        throw std::runtime_error("模型配置中不存在键: " + config.model_key);
+
+    return resolveModelPath(config.model_folder, modelNameFromNode(node, config));
+}
 
 YOLOModel::InferenceEngine::InferenceEngine(const ModelConfig &model_config, const DebugConfig &debug_config) : m_model_config(model_config), m_debug_config(debug_config) {}
 
