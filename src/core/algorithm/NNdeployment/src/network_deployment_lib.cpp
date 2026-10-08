@@ -268,9 +268,18 @@ ModelConfig loadModelConfigFromYaml(const YamlConfig &yaml_config)
     if (yaml_config.model_folder.empty())
         throw std::runtime_error("传入的模型文件夹路径为空: " + yaml_config.model_key);
 
-    if (!node["xml"])
-        throw std::runtime_error("模型配置缺少xml文件名: " + yaml_config.model_key);
-    const std::string xml_name = node["xml"].as<std::string>();
+    // 模型文件：优先使用 YamlConfig.model 的覆盖值，否则读节点里的 xml。
+    std::string xml_name;
+    if (yaml_config.model.has_value() && !yaml_config.model->empty())
+    {
+        xml_name = *yaml_config.model;
+    }
+    else
+    {
+        if (!node["xml"])
+            throw std::runtime_error("模型配置缺少xml文件名: " + yaml_config.model_key);
+        xml_name = node["xml"].as<std::string>();
+    }
     if (xml_name.empty())
         throw std::runtime_error("模型配置缺少xml文件名: " + yaml_config.model_key);
 
