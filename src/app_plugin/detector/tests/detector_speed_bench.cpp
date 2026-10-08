@@ -53,10 +53,7 @@ int main(int argc, char **argv)
         if (!video.isOpened() || !video.read(frame) || frame.empty())
             throw std::runtime_error("无法读取测试视频: " + video_path.string());
 
-        YamlConfig config{app_config.config_path.string(), model_key,
-                          (app_config.root / "所有模型").string()};
-        config.preprocess_cuda = app_config.cuda.preprocess;
-        config.postprocess_cuda = app_config.cuda.postprocess;
+        const YamlConfig config = app::makeYamlConfig(app_config, model_key);
 
         std::cout << "配置文件: " << app_config.config_path.string()
                   << " | OpenCV CUDA 可用: " << (opencvCudaAvailable() ? "是" : "否")

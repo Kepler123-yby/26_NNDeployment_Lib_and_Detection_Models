@@ -2,6 +2,8 @@
 
 #include <opencv2/core/utility.hpp>
 
+#include "network_deployment_interface.hpp"
+
 #include <filesystem>
 #include <optional>
 #include <stdexcept>
@@ -131,42 +133,68 @@ struct AppConfig
     CudaOptions cuda;
 };
 
-// 解析位置参数 root、可选 --config 以及 CUDA 开关。
-inline AppConfig resolveAppConfig(const cv::CommandLineParser &parser,
-                                  const std::string &default_config_name)
+// 解析位置参数 root（默认为构建时记录的工程根）。
+inline std::filesystem::path resolveRoot(const cv::CommandLineParser &parser)
 {
-    AppConfig config;
-
     const std::string root_arg = parser.get<std::string>(0);
-    config.root = std::filesystem::absolute(
+    return std::filesystem::absolute(
         root_arg.empty() ? std::filesystem::path(NNDEPLOYMENT_PROJECT_ROOT)
                          : std::filesystem::path(root_arg));
+}
 
-    const std::filesystem::path config_dir =
-        config.root / "src/app_plugin/detector/config";
-    const std::string config_arg = parser.get<std::string>("config");
-    if (config_arg.empty())
-    {
-        config.config_path = config_dir / default_config_name;
-    }
-    else
-    {
-        const std::filesystem::path given(config_arg);
-        std::error_code ec;
-        if (given.is_absolute())
-            config.config_path = given;
-        else if (std::filesystem::exists(given, ec))
-            config.config_path = std::filesystem::absolute(given); // 相对于当前工作目录
-        else
-            config.config_path = config_dir / given; // 只给文件名时到配置目录下查找
-    }
+// 解析单个配置文件：空 → config_dir/default_name；绝对 → 原样；相对且存在 → 相对 CWD；
+// 否则 → config_dir/name（即只给文件名时到配置目录下查找）。
+inline std::filesystem::path resolveConfigFile(const std::string &given,
+                                               const std::filesystem::path &config_dir,
+                                               const std::string &default_name)
+{
+    if (given.empty())
+        return config_dir / default_name;
 
+    const std::filesystem::path path(given);
+    std::error_code ec;
+    if (path.is_absolute())
+        return path;
+    if (std::filesystem::exists(path, ec))
+        return std::filesystem::absolute(path);
+    return config_dir / path;
+}
+
+// 解析位置参数 root、可选 --config 以及 CUDA 开关。
+// config_subdir 默认为运行配置目录；测试可传 "src/app_plugin/detector/tests"。
+inline AppConfig resolveAppConfig(
+    const cv::CommandLineParser &parser,
+    const std::string &default_config_name,
+    const std::string &config_subdir = "src/app_plugin/detector/config")
+{
+    AppConfig config;
+    config.root = resolveRoot(parser);
+
+    const std::filesystem::path config_dir = config.root / config_subdir;
+    config.config_path = resolveConfigFile(parser.get<std::string>("config"),
+                                          config_dir, default_config_name);
     config.cuda = resolveCuda(parser);
 
     std::error_code ec;
     if (!std::filesystem::is_regular_file(config.config_path, ec))
         throw std::runtime_error("找不到配置文件: " + config.config_path.string() +
                                  "（可用 --config=<路径> 或 --config <路径> 指定）");
+    return config;
+}
+
+// 把 AppConfig 的 CUDA 覆盖应用到 YamlConfig（供 detector 使用）。
+inline void applyCuda(const AppConfig &app_config, YamlConfig &config)
+{
+    config.preprocess_cuda = app_config.cuda.preprocess;
+    config.postprocess_cuda = app_config.cuda.postprocess;
+}
+
+// 根据 AppConfig 与模型节点名构造 YamlConfig。
+inline YamlConfig makeYamlConfig(const AppConfig &app_config, const std::string &model_key)
+{
+    YamlConfig config{app_config.config_path.string(), model_key,
+                      (app_config.root / "所有模型").string()};
+    applyCuda(app_config, config);
     return config;
 }
 

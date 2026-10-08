@@ -1,9 +1,11 @@
 #include "NNDetector.hpp"
+#include "AppConfig.hpp"
 
 #include <opencv2/videoio.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
@@ -11,11 +13,11 @@
 #include <vector>
 
 // CPU 与 OpenCV CUDA 两条后处理路径的一致性测试。
+// 配置通过 cv::CommandLineParser 管理，与 detector_speed_bench 对齐。
 // 前提：使用带 OpenCV CUDA 的构建（-DNNDEPLOYMENT_ENABLE_OPENCV_CUDA=ON）。
-
-#ifndef NNDEPLOYMENT_PROJECT_ROOT
-#define NNDEPLOYMENT_PROJECT_ROOT "."
-#endif
+//
+// 用法：
+//   cuda_parity_test [root] [--config=<cpu.yaml>] [--cuda-config=<cuda.yaml>] [--full-config=<full.yaml>]
 
 namespace fs = std::filesystem;
 
@@ -23,6 +25,13 @@ namespace
 {
 constexpr std::size_t kDelay = 0; // 同步推理，结果与输入帧一一对应。
 constexpr int kFrames = 20;       // 每个视频抽检的帧数。
+
+std::string parityKeys()
+{
+    return app::commonKeys() +
+           "{cuda-config||仅后处理 CUDA 的配置（默认 cuda_parity_cuda.yaml）}"
+           "{full-config||预处理+后处理均 CUDA 的配置（默认 cuda_parity_full.yaml）}";
+}
 
 void require(bool condition, const std::string &message)
 {
@@ -115,15 +124,14 @@ bool matchRecords(const std::vector<ArmorRecord> &reference,
 }
 
 void compareArmorVideo(const fs::path &root, const std::string &key,
-                       const fs::path &video_path, const std::string &cuda_config_name,
+                       const fs::path &video_path,
+                       const fs::path &cpu_config_path, const fs::path &cuda_config_path,
                        double point_tolerance, double score_tolerance)
 {
     const fs::path models = root / "所有模型";
-    const fs::path cpu_config = root / "src/app_plugin/detector/tests/cuda_parity_cpu.yaml";
-    const fs::path cuda_config = root / "src/app_plugin/detector/tests" / cuda_config_name;
 
-    ArmorDetector cpu(YamlConfig{cpu_config.string(), key, models.string()}, kDelay);
-    ArmorDetector cuda(YamlConfig{cuda_config.string(), key, models.string()}, kDelay);
+    ArmorDetector cpu(YamlConfig{cpu_config_path.string(), key, models.string()}, kDelay);
+    ArmorDetector cuda(YamlConfig{cuda_config_path.string(), key, models.string()}, kDelay);
 
     cv::VideoCapture video = openVideo(video_path);
     cv::Mat frame;
@@ -145,14 +153,13 @@ void compareArmorVideo(const fs::path &root, const std::string &key,
 }
 
 void compareRuneVideo(const fs::path &root, const fs::path &video_path,
-                      const std::string &cuda_config_name, double point_tolerance)
+                      const fs::path &cpu_config_path, const fs::path &cuda_config_path,
+                      double point_tolerance)
 {
     const fs::path models = root / "所有模型";
-    const fs::path cpu_config = root / "src/app_plugin/detector/tests/cuda_parity_cpu.yaml";
-    const fs::path cuda_config = root / "src/app_plugin/detector/tests" / cuda_config_name;
 
-    RuneDetector cpu(YamlConfig{cpu_config.string(), "rune_detect", models.string()}, kDelay);
-    RuneDetector cuda(YamlConfig{cuda_config.string(), "rune_detect", models.string()}, kDelay);
+    RuneDetector cpu(YamlConfig{cpu_config_path.string(), "rune_detect", models.string()}, kDelay);
+    RuneDetector cuda(YamlConfig{cuda_config_path.string(), "rune_detect", models.string()}, kDelay);
 
     cv::VideoCapture video = openVideo(video_path);
     cv::Mat frame;
@@ -193,21 +200,52 @@ void compareRuneVideo(const fs::path &root, const fs::path &video_path,
 }
 } // namespace
 
-int main()
+int main(int argc, char **argv)
 {
     try
     {
-        const fs::path root = fs::path(NNDEPLOYMENT_PROJECT_ROOT);
+        const app::CommandLine cli(argc, argv, {"config", "c", "cuda-config", "full-config"});
+        cv::CommandLineParser parser(cli.argc(), cli.argv(), parityKeys());
+        parser.about("NNdeployment CPU/CUDA 后处理一致性测试（默认 tests/cuda_parity_*.yaml）");
+        if (!app::handleParser(parser))
+            return parser.has("help") ? 0 : 1;
+
+        // CPU 基准配置走 --config（默认 cuda_parity_cpu.yaml）。
+        const app::AppConfig app_config = app::resolveAppConfig(
+            parser, "cuda_parity_cpu.yaml", "src/app_plugin/detector/tests");
+
+        const fs::path root = app_config.root;
+        const fs::path tests_dir = root / "src/app_plugin/detector/tests";
+        const fs::path cpu_config = app_config.config_path;
+        const fs::path cuda_config = app::resolveConfigFile(
+            parser.get<std::string>("cuda-config"), tests_dir, "cuda_parity_cuda.yaml");
+        const fs::path full_config = app::resolveConfigFile(
+            parser.get<std::string>("full-config"), tests_dir, "cuda_parity_full.yaml");
+
+        for (const fs::path &path : {cpu_config, cuda_config, full_config})
+        {
+            std::error_code ec;
+            require(fs::is_regular_file(path, ec), "找不到配置文件: " + path.string());
+        }
+
+        std::cout << "CPU 配置: " << cpu_config.string() << '\n'
+                  << "CUDA 配置: " << cuda_config.string() << '\n'
+                  << "全 CUDA 配置: " << full_config.string()
+                  << " | OpenCV CUDA 可用: " << (opencvCudaAvailable() ? "是" : "否") << std::endl;
 
         // 仅后处理 CUDA：输入张量完全相同，要求近乎精确一致。
-        compareArmorVideo(root, "armor_v5", root / "测试视频/装甲板.mp4", "cuda_parity_cuda.yaml", 0.05, 0.02);
-        compareArmorVideo(root, "armor_v8", root / "测试视频/装甲板.mp4", "cuda_parity_cuda.yaml", 0.05, 0.02);
-        compareRuneVideo(root, root / "测试视频/符.avi", "cuda_parity_cuda.yaml", 0.05);
+        compareArmorVideo(root, "armor_v5", root / "测试视频/装甲板.mp4",
+                          cpu_config, cuda_config, 0.05, 0.02);
+        compareArmorVideo(root, "armor_v8", root / "测试视频/装甲板.mp4",
+                          cpu_config, cuda_config, 0.05, 0.02);
+        compareRuneVideo(root, root / "测试视频/符.avi", cpu_config, cuda_config, 0.05);
 
         // 预处理 + 后处理均走 CUDA：缩放实现存在亚像素差异，放宽到像素级容差。
-        compareArmorVideo(root, "armor_v5", root / "测试视频/装甲板.mp4", "cuda_parity_full.yaml", 2.0, 0.1);
-        compareArmorVideo(root, "armor_v8", root / "测试视频/装甲板.mp4", "cuda_parity_full.yaml", 2.0, 0.1);
-        compareRuneVideo(root, root / "测试视频/符.avi", "cuda_parity_full.yaml", 2.0);
+        compareArmorVideo(root, "armor_v5", root / "测试视频/装甲板.mp4",
+                          cpu_config, full_config, 2.0, 0.1);
+        compareArmorVideo(root, "armor_v8", root / "测试视频/装甲板.mp4",
+                          cpu_config, full_config, 2.0, 0.1);
+        compareRuneVideo(root, root / "测试视频/符.avi", cpu_config, full_config, 2.0);
 
         std::cout << "cuda parity test passed" << std::endl;
         return 0;
