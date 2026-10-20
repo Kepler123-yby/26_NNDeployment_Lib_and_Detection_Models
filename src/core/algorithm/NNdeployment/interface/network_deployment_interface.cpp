@@ -71,7 +71,7 @@ RuneModel::RuneModel(const std::string &model_path)
     : m_model(std::make_unique<YOLOModel>(model_path))
 {
     if (!m_model->supportsRune())
-        throw std::invalid_argument("模型后处理类型不是神符，无法构造 RuneModel");
+        throw std::invalid_argument("模型后处理类型不是大符，无法构造 RuneModel");
 }
 
 RuneModel::RuneModel(const std::string &model_path,
@@ -94,7 +94,7 @@ RuneModel::RuneModel(const std::string &model_path,
                                          postprocess_cuda))
 {
     if (!m_model->supportsRune())
-        throw std::invalid_argument("模型后处理类型不是神符，无法构造 RuneModel");
+        throw std::invalid_argument("模型后处理类型不是大符，无法构造 RuneModel");
 }
 
 RuneModel::RuneModel(const YamlConfig &yaml_config,
@@ -102,7 +102,7 @@ RuneModel::RuneModel(const YamlConfig &yaml_config,
     : m_model(std::make_unique<YOLOModel>(yaml_config, debug_config))
 {
     if (!m_model->supportsRune())
-        throw std::invalid_argument("模型后处理类型不是神符，无法构造 RuneModel");
+        throw std::invalid_argument("模型后处理类型不是大符，无法构造 RuneModel");
 }
 
 RuneModel::~RuneModel() noexcept = default;

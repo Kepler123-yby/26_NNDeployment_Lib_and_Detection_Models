@@ -62,7 +62,7 @@ public:
 
     // 判断当前模型是否使用装甲板后处理。
     bool supportsArmor() const;
-    // 判断当前模型是否使用神符后处理。
+    // 判断当前模型是否使用大符后处理。
     bool supportsRune() const;
     class InferenceEngine;
     class PostProcessor;
