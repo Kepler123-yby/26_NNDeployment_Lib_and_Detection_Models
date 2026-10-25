@@ -700,23 +700,23 @@ flowchart LR
 
 ### 7.2 图像预处理：等比例缩放与坐标还原
 
-设原图尺寸为 $W_o \times H_o$，模型输入尺寸为 $W_t \times H_t$。预处理使用统一缩放比例
+设原图尺寸为 $`W_o \times H_o`$，模型输入尺寸为 $`W_t \times H_t`$。预处理使用统一缩放比例
 
-$$
+```math
 s = \min\left(\frac{W_t}{W_o},\frac{H_t}{H_o}\right)
-$$
+```
 
 得到缩放尺寸
 
-$$
+```math
 W_r=\operatorname{round}(sW_o),\qquad H_r=\operatorname{round}(sH_o).
-$$
+```
 
-当长宽比不一致时，图像居中填充为模型尺寸，填充值为 BGR `(124, 124, 124)`。设左、上填充量为 $p_x,p_y$，模型输出关键点 $(x_m,y_m)$ 通过
+当长宽比不一致时，图像居中填充为模型尺寸，填充值为 BGR `(124, 124, 124)`。设左、上填充量为 $`p_x,p_y`$，模型输出关键点 $`(x_m,y_m)`$ 通过
 
-$$
+```math
 x_o=\frac{x_m-p_x}{s},\qquad y_o=\frac{y_m-p_y}{s}
-$$
+```
 
 还原到原图坐标系。还原结果超出原图边界时，该候选会被丢弃。OpenVINO 后端随后完成 `u8 → f32`、`BGR → RGB`、除以 `255` 的归一化以及 `NHWC → NCHW` 布局转换；TensorRT 后端通过 OpenCV DNN 构造归一化 blob。
 
@@ -730,11 +730,11 @@ $$
 
 张量还原后，对应后处理器按照模型契约读取类别、颜色、置信度与关键点，完成阈值筛选和坐标逆变换，再抑制重复候选。
 
-装甲板和雷达将关键点外接矩形交给 OpenCV NMS。两个候选框 $A,B$ 的交并比为
+装甲板和雷达将关键点外接矩形交给 OpenCV NMS。两个候选框 $`A,B`$ 的交并比为
 
-$$
-\operatorname{IoU}(A,B)=\frac{|A\cap B|}{|A|+|B|-|A\cap B|}.
-$$
+```math
+\operatorname{IoU}(A,B)=\frac{\lvert A\cap B\rvert}{\lvert A\rvert+\lvert B\rvert-\lvert A\cap B\rvert}.
+```
 
 候选按置信度保留，并抑制高度重叠的低分框。当前装甲板默认 NMS 阈值为 `0.2`。
 
